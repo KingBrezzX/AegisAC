@@ -1,0 +1,34 @@
+name: AegisAC
+version: 1.0.0
+main: id.kingbrezz.aegisac.AegisAC
+description: Modern and lightweight anti-cheat for Minecraft Java servers.
+author: KingBrezz
+website: https://github.com/KingBrezz/AegisAC
+
+api-version: '26.2'
+load: POSTWORLD
+
+commands:
+  aegisac:
+    description: AegisAC administration command.
+    usage: /aegisac <reload|alerts|checks|verbose|info>
+    aliases:
+      - ac
+    permission: aegisac.admin
+
+permissions:
+  aegisac.admin:
+    description: Access to AegisAC administration commands.
+    default: op
+
+  aegisac.alerts:
+    description: Receive AegisAC violation alerts.
+    default: op
+
+  aegisac.verbose:
+    description: Receive detailed AegisAC check information.
+    default: op
+
+  aegisac.bypass:
+    description: Bypass AegisAC checks.
+    default: false
