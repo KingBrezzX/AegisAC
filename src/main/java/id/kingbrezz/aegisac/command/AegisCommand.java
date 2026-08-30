@@ -1,21 +1,43 @@
 package id.kingbrezz.aegisac.command;
 
 import id.kingbrezz.aegisac.AegisAC;
+import id.kingbrezz.aegisac.check.Check;
+import id.kingbrezz.aegisac.check.CheckManager;
+import id.kingbrezz.aegisac.manager.MessageManager;
+import id.kingbrezz.aegisac.player.PlayerData;
+import id.kingbrezz.aegisac.player.PlayerDataManager;
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.Player;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
-public final class AegisCommand implements CommandExecutor, TabCompleter {
+public final class AegisCommand
+        implements CommandExecutor, TabCompleter {
 
     private final AegisAC plugin;
+    private final MessageManager messages;
+    private final CheckManager checkManager;
+    private final PlayerDataManager playerDataManager;
 
-    public AegisCommand(AegisAC plugin) {
+    public AegisCommand(
+            AegisAC plugin,
+            MessageManager messages,
+            CheckManager checkManager,
+            PlayerDataManager playerDataManager
+    ) {
         this.plugin = plugin;
+        this.messages = messages;
+        this.checkManager = checkManager;
+        this.playerDataManager = playerDataManager;
     }
 
     @Override
@@ -26,124 +48,276 @@ public final class AegisCommand implements CommandExecutor, TabCompleter {
             String[] args
     ) {
         if (!sender.hasPermission("aegisac.admin")) {
-            send(sender, "general.no-permission");
+            send(sender, "errors.no-permission");
             return true;
         }
 
         if (args.length == 0) {
-            sendHelp(sender);
+            send(sender, "command.help");
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
-            case "reload" -> handleReload(sender);
-            case "alerts" -> handleAlerts(sender);
-            case "verbose" -> handleVerbose(sender);
-            case "checks" -> handleChecks(sender);
-            case "info" -> handleInfo(sender);
-            case "help" -> sendHelp(sender);
-            default -> send(sender, "general.unknown-command");
+        String subCommand =
+                args[0].toLowerCase(Locale.ROOT);
+
+        switch (subCommand) {
+            case "reload" -> reload(sender);
+            case "info" -> info(sender);
+            case "checks" -> checks(sender);
+            case "status" -> status(sender);
+            case "alerts" -> alerts(sender);
+            case "reset" -> reset(sender, args);
+            case "version" -> version(sender);
+            case "help" -> send(sender, "command.help");
+            default -> send(
+                    sender,
+                    "command.unknown",
+                    Map.of("command", args[0])
+            );
         }
 
         return true;
     }
 
-    private void handleReload(CommandSender sender) {
-        try {
-            plugin.reloadConfig();
-            send(sender, "general.reload-success");
-        } catch (Exception exception) {
-            plugin.getLogger().warning(
-                    "Failed to reload configuration: " + exception.getMessage()
-            );
+    private void reload(CommandSender sender) {
+        plugin.getConfigManager().load();
+        messages.reload();
 
-            send(sender, "general.reload-failed");
-        }
+        send(sender, "command.reload");
     }
 
-    private void handleAlerts(CommandSender sender) {
-        send(sender, "command.alerts.enabled");
-    }
+    private void info(CommandSender sender) {
+        String enabled = plugin.getConfigManager().isEnabled()
+                ? "&aEnabled"
+                : "&cDisabled";
 
-    private void handleVerbose(CommandSender sender) {
-        send(sender, "command.verbose.enabled");
-    }
+        sender.sendMessage(
+                colorize(
+                        "&8&m--------------------------"
+                )
+        );
 
-    private void handleChecks(CommandSender sender) {
-        sender.sendMessage(colorize("&8&m------------&r &bAegisAC Checks &8&m------------"));
+        sender.sendMessage(
+                colorize(
+                        "&bAegisAC &7Information"
+                )
+        );
 
-        sender.sendMessage(status("Movement", true));
-        sender.sendMessage(status("Combat", true));
-        sender.sendMessage(status("Player", true));
+        sender.sendMessage(
+                colorize(
+                        "&7Version: &f"
+                                + plugin.getDescription()
+                                .getVersion()
+                )
+        );
 
-        sender.sendMessage(colorize("&8&m---------------------------------------------"));
-    }
+        sender.sendMessage(
+                colorize(
+                        "&7Status: " + enabled
+                )
+        );
 
-    private void handleInfo(CommandSender sender) {
-        sender.sendMessage(colorize("&8&m----------------&r &bAegisAC &8&m----------------"));
-        sender.sendMessage(colorize(
-                "&7Version: &f" + plugin.getDescription().getVersion()
-        ));
-        sender.sendMessage(colorize("&7Author: &fKingBrezz"));
-        sender.sendMessage(colorize("&7Platform: &fPaper"));
-        sender.sendMessage(colorize("&7Edition: &fJava Edition"));
-        sender.sendMessage(colorize("&8&m---------------------------------------------"));
-    }
+        sender.sendMessage(
+                colorize(
+                        "&7Registered checks: &f"
+                                + checkManager.size()
+                )
+        );
 
-    private void sendHelp(CommandSender sender) {
-        sender.sendMessage(colorize("&8&m--------------------&r &bAegisAC &8&m--------------------"));
-        sender.sendMessage(colorize("&b/aegisac reload &8- &7Reload configuration."));
-        sender.sendMessage(colorize("&b/aegisac alerts &8- &7Manage violation alerts."));
-        sender.sendMessage(colorize("&b/aegisac checks &8- &7Show enabled checks."));
-        sender.sendMessage(colorize("&b/aegisac verbose &8- &7Toggle verbose detection."));
-        sender.sendMessage(colorize("&b/aegisac info &8- &7Show plugin information."));
-        sender.sendMessage(colorize("&8&m------------------------------------------------"));
-    }
+        sender.sendMessage(
+                colorize(
+                        "&7Tracked players: &f"
+                                + playerDataManager.size()
+                )
+        );
 
-    private String status(String name, boolean enabled) {
-        return colorize(
-                (enabled ? "&a✔ " : "&c✘ ")
-                        + "&f"
-                        + name
-                        + " &8- "
-                        + (enabled ? "&aEnabled" : "&cDisabled")
+        sender.sendMessage(
+                colorize(
+                        "&8&m--------------------------"
+                )
         );
     }
 
-    private void send(CommandSender sender, String path) {
-        String message = plugin.getConfig().getString(path);
+    private void checks(CommandSender sender) {
+        List<Check> checks =
+                new ArrayList<>(
+                        checkManager.getChecks()
+                );
 
-        if (message == null) {
-            message = getDefaultMessage(path);
+        if (checks.isEmpty()) {
+            send(sender, "command.no-checks");
+            return;
         }
 
-        sender.sendMessage(colorize(message.replace(
-                "{prefix}",
-                "&8[&bAegisAC&8] &r"
-        )));
+        sender.sendMessage(
+                colorize("&bAegisAC Checks")
+        );
+
+        for (Check check : checks) {
+            String state = check.isEnabled()
+                    ? "&aON"
+                    : "&cOFF";
+
+            sender.sendMessage(
+                    colorize(
+                            "&8- &f"
+                                    + check.getName()
+                                    + " &7["
+                                    + state
+                                    + "&7] &8("
+                                    + check.getCategory()
+                                    + "&8)"
+                    )
+            );
+        }
     }
 
-    private String getDefaultMessage(String path) {
-        return switch (path) {
-            case "general.no-permission" ->
-                    "{prefix}&cYou don't have permission to do that.";
+    private void status(CommandSender sender) {
+        boolean enabled =
+                plugin.getConfigManager().isEnabled();
 
-            case "general.unknown-command" ->
-                    "{prefix}&cUnknown subcommand. Use &f/aegisac help&c.";
+        sender.sendMessage(
+                colorize(
+                        "&7AegisAC: "
+                                + (enabled
+                                ? "&aONLINE"
+                                : "&cDISABLED")
+                )
+        );
 
-            case "general.reload-success" ->
-                    "{prefix}&aConfiguration reloaded successfully.";
+        sender.sendMessage(
+                colorize(
+                        "&7Checks: &f"
+                                + checkManager.size()
+        );
 
-            case "general.reload-failed" ->
-                    "{prefix}&cFailed to reload configuration.";
-
-            default ->
-                    "{prefix}&cMessage not found.";
-        };
+        sender.sendMessage(
+                colorize(
+                        "&7Players tracked: &f"
+                                + playerDataManager.size()
+        );
     }
 
-    private String colorize(String message) {
-        return ChatColor.translateAlternateColorCodes('&', message);
+    private void alerts(CommandSender sender) {
+        if (!sender.hasPermission(
+                "aegisac.alerts"
+        )) {
+            send(sender, "errors.no-permission");
+            return;
+        }
+
+        send(sender, "command.alerts-enabled");
+    }
+
+    private void reset(
+            CommandSender sender,
+            String[] args
+    ) {
+        if (args.length < 2) {
+            send(
+                    sender,
+                    "command.reset-usage"
+            );
+            return;
+        }
+
+        Player target =
+                Bukkit.getPlayerExact(args[1]);
+
+        if (target == null) {
+            send(
+                    sender,
+                    "errors.player-not-found",
+                    Map.of("player", args[1])
+            );
+            return;
+        }
+
+        PlayerData data =
+                playerDataManager.find(
+                        target.getUniqueId()
+                );
+
+        if (data == null) {
+            send(
+                    sender,
+                    "errors.player-not-tracked",
+                    Map.of("player", target.getName())
+            );
+            return;
+        }
+
+        if (args.length >= 3) {
+            String check =
+                    args[2].toLowerCase(Locale.ROOT);
+
+            data.resetViolation(check);
+
+            send(
+                    sender,
+                    "command.reset-check",
+                    Map.of(
+                            "player",
+                            target.getName(),
+                            "check",
+                            check
+                    )
+            );
+
+            return;
+        }
+
+        data.resetViolations();
+
+        send(
+                sender,
+                "command.reset-player",
+                Map.of(
+                        "player",
+                        target.getName()
+                )
+        );
+    }
+
+    private void version(CommandSender sender) {
+        send(
+                sender,
+                "command.version",
+                Map.of(
+                        "version",
+                        plugin.getDescription()
+                                .getVersion()
+                )
+        );
+    }
+
+    private void send(
+            CommandSender sender,
+            String path
+    ) {
+        sender.sendMessage(
+                messages.getWithPrefix(path)
+        );
+    }
+
+    private void send(
+            CommandSender sender,
+            String path,
+            Map<String, ?> placeholders
+    ) {
+        sender.sendMessage(
+                messages.getWithPrefix(
+                        path,
+                        placeholders
+                )
+        );
+    }
+
+    private String colorize(String text) {
+        return ChatColor.translateAlternateColorCodes(
+                '&',
+                text
+        );
     }
 
     @Override
@@ -153,27 +327,72 @@ public final class AegisCommand implements CommandExecutor, TabCompleter {
             String alias,
             String[] args
     ) {
-        if (!sender.hasPermission("aegisac.admin")) {
-            return List.of();
+        if (!sender.hasPermission(
+                "aegisac.admin"
+        )) {
+            return Collections.emptyList();
         }
 
         if (args.length == 1) {
-            List<String> suggestions = new ArrayList<>();
-
-            suggestions.add("reload");
-            suggestions.add("alerts");
-            suggestions.add("checks");
-            suggestions.add("verbose");
-            suggestions.add("info");
-            suggestions.add("help");
-
-            String input = args[0].toLowerCase();
-
-            return suggestions.stream()
-                    .filter(value -> value.startsWith(input))
-                    .toList();
+            return filter(
+                    List.of(
+                            "help",
+                            "reload",
+                            "info",
+                            "checks",
+                            "status",
+                            "alerts",
+                            "reset",
+                            "version"
+                    ),
+                    args[0]
+            );
         }
 
-        return List.of();
+        if (args.length == 2
+                && args[0].equalsIgnoreCase("reset")) {
+            List<String> names = new ArrayList<>();
+
+            for (Player player :
+                    Bukkit.getOnlinePlayers()) {
+                names.add(player.getName());
+            }
+
+            return filter(names, args[1]);
+        }
+
+        if (args.length == 3
+                && args[0].equalsIgnoreCase("reset")) {
+            List<String> names = new ArrayList<>();
+
+            for (Check check :
+                    checkManager.getChecks()) {
+                names.add(check.getName());
+            }
+
+            return filter(names, args[2]);
+        }
+
+        return Collections.emptyList();
     }
+
+    private List<String> filter(
+            List<String> values,
+            String input
+    ) {
+        String lower =
+                input.toLowerCase(Locale.ROOT);
+
+        List<String> result = new ArrayList<>();
+
+        for (String value : values) {
+            if (value.toLowerCase(
+                    Locale.ROOT
+            ).startsWith(lower)) {
+                result.add(value);
+            }
         }
+
+        return result;
+    }
+                }
