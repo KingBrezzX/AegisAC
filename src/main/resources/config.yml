@@ -1,79 +1,83 @@
 # ============================================================
 # AegisAC
-# Modern Anti-Cheat for Minecraft Java Edition
-#
-# Author: KingBrezz
-# Version: 1.0.0
+# Advanced Minecraft Anti-Cheat
+# By KingBrezz
 # ============================================================
 
 settings:
-
-  # General plugin state
   enabled: true
 
-  # Debug mode should normally remain disabled.
   debug: false
 
-  # Enable detailed check processing logs.
-  verbose: false
+  performance-protection:
+    enabled: true
+    minimum-tps: 17.0
 
-  # Do not process checks for players with this permission.
-  bypass-permission: "aegisac.bypass"
+  ping-protection:
+    enabled: true
+    maximum-ping: 500
 
+  spectator-ignore: true
+
+  permission-bypass:
+    enabled: true
+    permission: "aegisac.bypass"
 
 # ============================================================
 # Detection
 # ============================================================
 
 detection:
+  maximum-checks-per-cycle: 8
 
-  # Violation level required before an action is executed.
-  default-punishment-vl: 20
-
-  # Maximum violation level stored for a player.
-  max-violation-level: 100
-
-  # Amount removed from VL after every decay interval.
-  violation-decay: 1.0
-
-  # Delay between violation decay operations in seconds.
-  violation-decay-interval: 5
-
-  # Minimum confidence required for a detection.
   minimum-confidence: 0.70
 
-  # Prevent checks from processing players immediately after join.
-  join-grace-period: 3
-
-  # Ignore checks when server performance is unstable.
-  performance-protection:
-    enabled: true
-    minimum-tps: 18.0
-
-  # Ignore movement checks when the player's connection
-  # is experiencing unusually high latency.
-  ping-protection:
-    enabled: true
-    maximum-ping: 400
-
+  violation:
+    maximum: 100.0
+    decay: 0.05
 
 # ============================================================
 # Setback
 # ============================================================
 
 setback:
-
   enabled: true
 
-  # Maximum setbacks allowed during one interval.
-  max-per-interval: 3
+  interval-ms: 250
 
-  # Interval used by the setback limiter.
-  interval-seconds: 10
+  maximum-per-interval: 3
 
-  # Teleport the player back to their last known safe position.
-  restore-safe-position: true
+# ============================================================
+# Alerts
+# ============================================================
 
+alerts:
+  enabled: true
+
+  staff: true
+
+  console: true
+
+  anti-spam:
+    enabled: true
+    cooldown-ms: 1000
+
+# ============================================================
+# Punishment
+# ============================================================
+
+punishment:
+  enabled: true
+
+  threshold: 20
+
+  require-confidence: true
+
+  minimum-confidence: 0.95
+
+  protect-operators: true
+
+  command: "ban {player} Suspicious activity detected by AegisAC"
 
 # ============================================================
 # Checks
@@ -81,327 +85,82 @@ setback:
 
 checks:
 
-  # ----------------------------------------------------------
-  # Movement
-  # ----------------------------------------------------------
-
   movement:
     enabled: true
 
-    fly:
-      enabled: true
-      vl: 5
-      confidence: 0.90
-      setback: true
-
     speed:
       enabled: true
-      vl: 4
-      confidence: 0.88
-      setback: true
 
-    air-jump:
+      maximum-horizontal-speed: 0.70
+
+      violation:
+        amount: 1.0
+
+    fly:
       enabled: true
-      vl: 6
-      confidence: 0.94
-      setback: true
+
+      violation:
+        amount: 1.0
 
     no-fall:
       enabled: true
-      vl: 5
-      confidence: 0.92
-      setback: false
 
-    ground-spoof:
-      enabled: true
-      vl: 5
-      confidence: 0.91
-      setback: true
-
-    step:
-      enabled: true
-      vl: 5
-      confidence: 0.90
-      setback: true
-
-    jesus:
-      enabled: true
-      vl: 5
-      confidence: 0.91
-      setback: true
-
-    phase:
-      enabled: true
-      vl: 8
-      confidence: 0.97
-      setback: true
-
-    spider:
-      enabled: true
-      vl: 5
-      confidence: 0.92
-      setback: true
-
-    fast-climb:
-      enabled: true
-      vl: 4
-      confidence: 0.90
-      setback: true
-
-    glide:
-      enabled: true
-      vl: 5
-      confidence: 0.92
-      setback: true
-
-    timer:
-      enabled: true
-      vl: 6
-      confidence: 0.94
-      setback: false
-
-    invalid-motion:
-      enabled: true
-      vl: 8
-      confidence: 0.98
-      setback: true
-
-  # ----------------------------------------------------------
-  # Combat
-  # ----------------------------------------------------------
+      violation:
+        amount: 1.0
 
   combat:
     enabled: true
 
-    killaura:
+    reach:
       enabled: true
-      vl: 8
-      confidence: 0.96
+
+      maximum-distance: 3.15
+
+      violation:
+        amount: 1.0
 
     aim:
       enabled: true
-      vl: 5
-      confidence: 0.90
 
-    reach:
-      enabled: true
-      vl: 8
-      confidence: 0.98
-
-    hitbox:
-      enabled: true
-      vl: 6
-      confidence: 0.94
+      violation:
+        amount: 1.0
 
     autoclicker:
       enabled: true
-      vl: 5
-      confidence: 0.91
 
-    cps:
-      enabled: true
-      vl: 4
-      confidence: 0.88
+      maximum-cps: 18
 
-    multi-aura:
-      enabled: true
-      vl: 8
-      confidence: 0.97
-
-    criticals:
-      enabled: true
-      vl: 5
-      confidence: 0.93
-
-    fast-attack:
-      enabled: true
-      vl: 5
-      confidence: 0.92
-
-    rotation:
-      enabled: true
-      vl: 5
-      confidence: 0.91
-
-    attack-rate:
-      enabled: true
-      vl: 5
-      confidence: 0.92
-
-  # ----------------------------------------------------------
-  # Player / Interaction
-  # ----------------------------------------------------------
+      violation:
+        amount: 1.0
 
   player:
     enabled: true
 
     inventory:
       enabled: true
-      vl: 5
-      confidence: 0.92
 
-    fast-place:
-      enabled: true
-      vl: 4
-      confidence: 0.90
-
-    fast-break:
-      enabled: true
-      vl: 4
-      confidence: 0.90
-
-    scaffold:
-      enabled: true
-      vl: 6
-      confidence: 0.94
-
-    tower:
-      enabled: true
-      vl: 6
-      confidence: 0.94
+      violation:
+        amount: 1.0
 
     interaction:
       enabled: true
-      vl: 6
-      confidence: 0.95
 
-    invalid-rotation:
-      enabled: true
-      vl: 7
-      confidence: 0.98
-
-    impossible-action:
-      enabled: true
-      vl: 8
-      confidence: 0.98
-
+      violation:
+        amount: 1.0
 
 # ============================================================
-# Punishment
+# World exclusions
 # ============================================================
 
-punishment:
-
-  enabled: true
-
-  # Punishment is only executed after the configured VL
-  # has been reached.
-  threshold: 20
-
-  # Commands are executed by console.
-  commands:
-    - "kick {player} &cAegisAC &7| &fUnfair client behavior detected."
-
-  # Never punish operators automatically.
-  protect-operators: true
-
-  # Require a high-confidence detection before punishment.
-  require-confidence: true
-
-  minimum-confidence: 0.95
-
-
-# ============================================================
-# Alerts
-# ============================================================
-
-alerts:
-
-  enabled: true
-
-  # Send alerts to players with aegisac.alerts.
-  staff: true
-
-  # Console alerts.
-  console: true
-
-  # Prevent the same alert from appearing repeatedly.
-  anti-spam:
-    enabled: true
-    cooldown-milliseconds: 1500
-
-  # Alert format.
-  format: "&8[&bAegisAC&8] &c⚠ &f{player} &7failed &b{check} &8(&fVL {vl}&8) &7Confidence: &f{confidence}%"
-
-
-# ============================================================
-# Discord
-# ============================================================
-
-discord:
-
-  enabled: false
-
-  webhook-url: ""
-
-  # Do not send every single violation to Discord.
-  # Only send detections that reach this VL.
-  minimum-violation-level: 10
-
-  anti-spam:
-    enabled: true
-    cooldown-seconds: 10
-
-  username: "AegisAC"
-
-  embed:
-    enabled: true
-    title: "AegisAC Detection"
-    footer: "AegisAC • KingBrezz"
-
+worlds:
+  ignored: []
 
 # ============================================================
 # Logging
 # ============================================================
 
 logging:
-
-  enabled: true
-
-  # Store detection history.
-  history: true
-
-  # Maximum number of records kept in memory per player.
-  max-history-per-player: 50
-
-  # Write detailed detections to a file.
-  file: true
-
-
-# ============================================================
-# Compatibility
-# ============================================================
-
-compatibility:
-
-  # Ignore players during these server states.
-  ignore:
-    spectator: true
-    vanished: true
-    flying-with-permission: true
-
-  # Commands/plugins may temporarily exempt a player.
-  temporary-exemption:
-    enabled: true
-    duration-seconds: 5
-
-
-# ============================================================
-# Performance
-# ============================================================
-
-performance:
-
-  # Keep check processing asynchronous where it is safe to do so.
-  async-processing: true
-
-  # Maximum checks processed per player per cycle.
-  max-checks-per-cycle: 32
-
-  # Avoid expensive processing when nobody is online.
-  skip-empty-server: true
-
-  # Automatically reduce non-critical processing under load.
-  adaptive-processing:
-    enabled: true
-    minimum-tps: 17.0
+  console:
+    violations: true
+    punishments: true
+    setbacks: false
