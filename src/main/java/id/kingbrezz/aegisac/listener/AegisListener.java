@@ -2,21 +2,23 @@ package id.kingbrezz.aegisac.listener;
 
 import id.kingbrezz.aegisac.AegisAC;
 import id.kingbrezz.aegisac.check.DetectionEngine;
-import id.kingbrezz.aegisac.player.PlayerData;
 import id.kingbrezz.aegisac.player.PlayerDataManager;
 import id.kingbrezz.aegisac.setback.SetbackManager;
-import org.bukkit.entity.Entity;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerKickEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 
 import java.util.Objects;
 
@@ -33,21 +35,15 @@ public final class AegisListener implements Listener {
             PlayerDataManager playerDataManager,
             SetbackManager setbackManager
     ) {
-        this.plugin = Objects.requireNonNull(
-                plugin,
-                "plugin"
-        );
-
+        this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.detectionEngine = Objects.requireNonNull(
                 detectionEngine,
                 "detectionEngine"
         );
-
         this.playerDataManager = Objects.requireNonNull(
                 playerDataManager,
                 "playerDataManager"
         );
-
         this.setbackManager = Objects.requireNonNull(
                 setbackManager,
                 "setbackManager"
@@ -61,27 +57,21 @@ public final class AegisListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
-        PlayerData data =
+        PlayerDataManager.PlayerData data =
                 playerDataManager.get(player);
 
-        data.resetJoinTime();
-        data.setLastLocation(
-                player.getLocation()
-        );
+        Location location = player.getLocation();
 
-        setbackManager.reset(player);
-    }
+        data.markValidLocation(location);
 
-    @EventHandler(
-            priority = EventPriority.MONITOR,
-            ignoreCancelled = true
-    )
-    public void onQuit(PlayerQuitEvent event) {
-        Player player = event.getPlayer();
+        /*
+         * Seed the movement state without generating a false detection
+         * immediately after joining.
+         */
+        data.updateMovement(player);
+        data.markValidLocation(location);
 
-        setbackManager.remove(player);
-
-        playerDataManager.remove(player);
+        detectionEngine.handleJoin(player);
     }
 
     @EventHandler(
@@ -91,48 +81,121 @@ public final class AegisListener implements Listener {
     public void onMove(PlayerMoveEvent event) {
         Player player = event.getPlayer();
 
-        if (!hasPositionChanged(event)) {
+        Location from = event.getFrom();
+        Location to = event.getTo();
+
+        if (to == null) {
             return;
         }
 
-        PlayerData data =
+        /*
+         * Ignore pure head rotation. There is no movement to analyse.
+         */
+        if (samePosition(from, to)) {
+            detectionEngine.handleRotation(player, from, to);
+            return;
+        }
+
+        PlayerDataManager.PlayerData data =
                 playerDataManager.get(player);
 
         /*
-         * The safe location is updated before processing
-         * the current movement so a valid position can be
-         * used by the setback system.
+         * DetectionEngine receives the movement BEFORE the current
+         * position becomes the new safe position.
          */
-        setbackManager.updateSafeLocation(
+        boolean suspicious = detectionEngine.handleMove(
                 player,
-                data
+                from,
+                to
         );
 
-        detectionEngine.process(player);
+        data.updateMovement(player);
+
+        /*
+         * Only a movement accepted by the detection engine becomes
+         * the new setback location.
+         */
+        if (!suspicious && !isUnsafeLocation(to)) {
+            data.markValidLocation(to);
+        }
     }
 
     @EventHandler(
             priority = EventPriority.MONITOR,
             ignoreCancelled = true
     )
-    public void onDamage(EntityDamageByEntityEvent event) {
-        Player attacker =
-                resolveAttacker(event.getDamager());
+    public void onTeleport(PlayerTeleportEvent event) {
+        Player player = event.getPlayer();
 
-        if (attacker == null) {
+        Location destination = event.getTo();
+
+        if (destination == null) {
             return;
         }
 
-        detectionEngine.processCombat(attacker);
+        PlayerDataManager.PlayerData data =
+                playerDataManager.get(player);
+
+        /*
+         * Teleports are legitimate state changes. Do not let the next
+         * movement check compare against an old world/location.
+         */
+        data.markValidLocation(destination);
+        data.updateMovement(player);
+
+        detectionEngine.handleTeleport(
+                player,
+                event.getFrom(),
+                destination,
+                event.getCause()
+        );
+
+        /*
+         * A teleport must never be treated as an automatic violation.
+         * It resets the movement baseline.
+         */
+        setbackManager.clearPending(player);
     }
 
     @EventHandler(
             priority = EventPriority.MONITOR,
             ignoreCancelled = true
     )
-    public void onInteract(PlayerInteractEvent event) {
-        detectionEngine.processPlayer(
-                event.getPlayer()
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        Player player = event.getPlayer();
+
+        PlayerDataManager.PlayerData data =
+                playerDataManager.get(player);
+
+        data.markValidLocation(player.getLocation());
+        data.updateMovement(player);
+
+        detectionEngine.handleWorldChange(player);
+        setbackManager.clearPending(player);
+    }
+
+    @EventHandler(
+            priority = EventPriority.MONITOR,
+            ignoreCancelled = true
+    )
+    public void onAttack(EntityDamageByEntityEvent event) {
+        if (!(event.getDamager() instanceof Player player)) {
+            return;
+        }
+
+        if (event.isCancelled()) {
+            return;
+        }
+
+        PlayerDataManager.PlayerData data =
+                playerDataManager.get(player);
+
+        data.markAttack();
+
+        detectionEngine.handleAttack(
+                player,
+                event.getEntity(),
+                event
         );
     }
 
@@ -140,54 +203,94 @@ public final class AegisListener implements Listener {
             priority = EventPriority.MONITOR,
             ignoreCancelled = true
     )
-    public void onInventoryClick(
-            InventoryClickEvent event
-    ) {
-        if (!(event.getWhoClicked() instanceof Player player)) {
+    public void onBlockPlace(BlockPlaceEvent event) {
+        Player player = event.getPlayer();
+
+        PlayerDataManager.PlayerData data =
+                playerDataManager.get(player);
+
+        data.markPlace();
+
+        detectionEngine.handleBlockPlace(
+                player,
+                event
+        );
+    }
+
+    @EventHandler(
+            priority = EventPriority.MONITOR,
+            ignoreCancelled = true
+    )
+    public void onBlockBreak(BlockBreakEvent event) {
+        Player player = event.getPlayer();
+
+        PlayerDataManager.PlayerData data =
+                playerDataManager.get(player);
+
+        data.markBreak();
+
+        detectionEngine.handleBlockBreak(
+                player,
+                event
+        );
+    }
+
+    @EventHandler(
+            priority = EventPriority.MONITOR
+    )
+    public void onDeath(PlayerDeathEvent event) {
+        Player player = event.getEntity();
+
+        detectionEngine.handleDeath(player);
+
+        setbackManager.clearPending(player);
+    }
+
+    @EventHandler(
+            priority = EventPriority.MONITOR
+    )
+    public void onKick(PlayerKickEvent event) {
+        cleanup(event.getPlayer());
+    }
+
+    @EventHandler(
+            priority = EventPriority.MONITOR
+    )
+    public void onQuit(PlayerQuitEvent event) {
+        cleanup(event.getPlayer());
+    }
+
+    private void cleanup(Player player) {
+        if (player == null) {
             return;
         }
 
-        detectionEngine.processPlayer(player);
+        detectionEngine.handleQuit(player);
+        setbackManager.clearPending(player);
+        playerDataManager.remove(player);
     }
 
-    private boolean hasPositionChanged(
-            PlayerMoveEvent event
-    ) {
-        if (event.getFrom() == null
-                || event.getTo() == null) {
-            return false;
-        }
-
-        if (!event.getFrom().getWorld()
-                .equals(event.getTo().getWorld())) {
+    private boolean samePosition(Location first, Location second) {
+        if (first == null || second == null) {
             return true;
         }
 
-        return event.getFrom().getX()
-                != event.getTo().getX()
-                || event.getFrom().getY()
-                != event.getTo().getY()
-                || event.getFrom().getZ()
-                != event.getTo().getZ();
+        return first.getX() == second.getX()
+                && first.getY() == second.getY()
+                && first.getZ() == second.getZ();
     }
 
-    private Player resolveAttacker(Entity entity) {
-        if (entity instanceof Player player) {
-            return player;
+    private boolean isUnsafeLocation(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return true;
         }
 
-        if (entity instanceof Projectile projectile) {
-            Object shooter = projectile.getShooter();
+        double x = location.getX();
+        double y = location.getY();
+        double z = location.getZ();
 
-            if (shooter instanceof Player player) {
-                return player;
-            }
-        }
-
-        return null;
+        return !Double.isFinite(x)
+                || !Double.isFinite(y)
+                || !Double.isFinite(z);
     }
-
-    public AegisAC getPlugin() {
-        return plugin;
     }
-          }
