@@ -22,60 +22,174 @@ public final class CheckManager {
     private final List<Check> checks = new ArrayList<>();
 
     public CheckManager(AegisAC plugin) {
-        this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.plugin = Objects.requireNonNull(
+                plugin,
+                "plugin"
+        );
     }
 
-    public void register(Check check) {
-        Objects.requireNonNull(check, "check");
+    /**
+     * Registers a check.
+     */
+    public synchronized void register(Check check) {
+        Objects.requireNonNull(
+                check,
+                "check"
+        );
 
-        if (!checks.contains(check)) {
+        if (!contains(check.getName())) {
             checks.add(check);
         }
     }
 
-    public void registerAll(Collection<? extends Check> checks) {
-        if (checks == null) {
+    /**
+     * Registers multiple checks.
+     */
+    public synchronized void registerAll(
+            Collection<? extends Check> collection
+    ) {
+        if (collection == null || collection.isEmpty()) {
             return;
         }
 
-        for (Check check : checks) {
-            register(check);
+        for (Check check : collection) {
+            if (check != null) {
+                register(check);
+            }
         }
     }
 
-    public void unregister(Check check) {
-        if (check != null) {
-            checks.remove(check);
+    /**
+     * Removes a check instance.
+     */
+    public synchronized void unregister(Check check) {
+        if (check == null) {
+            return;
         }
+
+        checks.remove(check);
     }
 
-    public void clear() {
+    /**
+     * Removes a check by technical name.
+     */
+    public synchronized void unregister(String name) {
+        if (name == null) {
+            return;
+        }
+
+        checks.removeIf(check ->
+                check != null
+                        && check.getName().equalsIgnoreCase(name)
+        );
+    }
+
+    /**
+     * Removes all registered checks.
+     */
+    public synchronized void clear() {
         checks.clear();
     }
 
-    public List<Check> getChecks() {
-        return Collections.unmodifiableList(checks);
+    /**
+     * Returns an immutable snapshot of registered checks.
+     */
+    public synchronized List<Check> getChecks() {
+        return Collections.unmodifiableList(
+                new ArrayList<>(checks)
+        );
     }
 
-    public int size() {
+    /**
+     * Finds a check by name.
+     */
+    public synchronized Check getCheck(String name) {
+        if (name == null) {
+            return null;
+        }
+
+        for (Check check : checks) {
+            if (check != null
+                    && check.getName().equalsIgnoreCase(name)) {
+                return check;
+            }
+        }
+
+        return null;
+    }
+
+    public synchronized boolean contains(String name) {
+        return getCheck(name) != null;
+    }
+
+    public synchronized int size() {
         return checks.size();
     }
 
+    /*
+     * ------------------------------------------------------------
+     * PLAYER LIFECYCLE
+     * ------------------------------------------------------------
+     */
+
     public void handleJoin(Player player) {
+        if (player == null) {
+            return;
+        }
+
         forEach(check -> check.onJoin(player));
     }
+
+    public void handleDeath(
+            Player player,
+            PlayerDataManager.PlayerData data
+    ) {
+        if (player == null) {
+            return;
+        }
+
+        forEach(check -> {
+            if (!isEnabled(check)) {
+                return;
+            }
+
+            check.onDeath(player, data);
+        });
+    }
+
+    public void handleQuit(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        /*
+         * Quit is deliberately dispatched even when a check has been
+         * disabled, allowing it to clean up temporary state.
+         */
+        forEach(check -> check.onQuit(player));
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * MOVEMENT
+     * ------------------------------------------------------------
+     */
 
     public boolean handleMove(
             DetectionEngine.MovementContext context
     ) {
+        if (context == null
+                || context.player() == null
+                || context.from() == null
+                || context.to() == null) {
+            return false;
+        }
+
         boolean violation = false;
 
         for (Check check : snapshot()) {
-            if (!isEnabled(check)) {
-                continue;
-            }
-
-            if (!check.isMovementCheck()) {
+            if (!isEnabled(check)
+                    || !check.isMovementCheck()) {
                 continue;
             }
 
@@ -84,7 +198,10 @@ public final class CheckManager {
                     violation = true;
                 }
             } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
+                handleCheckError(
+                        check,
+                        throwable
+                );
             }
         }
 
@@ -97,18 +214,32 @@ public final class CheckManager {
             Location to,
             PlayerDataManager.PlayerData data
     ) {
+        if (player == null
+                || from == null
+                || to == null) {
+            return;
+        }
+
         forEach(check -> {
-            if (!isEnabled(check) || !check.isRotationCheck()) {
+            if (!isEnabled(check)
+                    || !check.isRotationCheck()) {
                 return;
             }
 
-            try {
-                check.onRotation(player, from, to, data);
-            } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
-            }
+            check.onRotation(
+                    player,
+                    from,
+                    to,
+                    data
+            );
         });
     }
+
+    /*
+     * ------------------------------------------------------------
+     * TELEPORT / WORLD
+     * ------------------------------------------------------------
+     */
 
     public void handleTeleport(
             Player player,
@@ -117,16 +248,22 @@ public final class CheckManager {
             PlayerTeleportEvent.TeleportCause cause,
             PlayerDataManager.PlayerData data
     ) {
+        if (player == null || to == null) {
+            return;
+        }
+
         forEach(check -> {
             if (!isEnabled(check)) {
                 return;
             }
 
-            try {
-                check.onTeleport(player, from, to, cause, data);
-            } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
-            }
+            check.onTeleport(
+                    player,
+                    from,
+                    to,
+                    cause,
+                    data
+            );
         });
     }
 
@@ -134,18 +271,27 @@ public final class CheckManager {
             Player player,
             PlayerDataManager.PlayerData data
     ) {
+        if (player == null) {
+            return;
+        }
+
         forEach(check -> {
             if (!isEnabled(check)) {
                 return;
             }
 
-            try {
-                check.onWorldChange(player, data);
-            } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
-            }
+            check.onWorldChange(
+                    player,
+                    data
+            );
         });
     }
+
+    /*
+     * ------------------------------------------------------------
+     * COMBAT
+     * ------------------------------------------------------------
+     */
 
     public void handleAttack(
             Player player,
@@ -153,34 +299,53 @@ public final class CheckManager {
             EntityDamageByEntityEvent event,
             PlayerDataManager.PlayerData data
     ) {
+        if (player == null
+                || target == null
+                || event == null) {
+            return;
+        }
+
         forEach(check -> {
-            if (!isEnabled(check) || !check.isCombatCheck()) {
+            if (!isEnabled(check)
+                    || !check.isCombatCheck()) {
                 return;
             }
 
-            try {
-                check.onAttack(player, target, event, data);
-            } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
-            }
+            check.onAttack(
+                    player,
+                    target,
+                    event,
+                    data
+            );
         });
     }
+
+    /*
+     * ------------------------------------------------------------
+     * BLOCK
+     * ------------------------------------------------------------
+     */
 
     public void handleBlockPlace(
             Player player,
             BlockPlaceEvent event,
             PlayerDataManager.PlayerData data
     ) {
+        if (player == null || event == null) {
+            return;
+        }
+
         forEach(check -> {
-            if (!isEnabled(check) || !check.isBlockCheck()) {
+            if (!isEnabled(check)
+                    || !check.isBlockCheck()) {
                 return;
             }
 
-            try {
-                check.onBlockPlace(player, event, data);
-            } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
-            }
+            check.onBlockPlace(
+                    player,
+                    event,
+                    data
+            );
         });
     }
 
@@ -189,58 +354,49 @@ public final class CheckManager {
             BlockBreakEvent event,
             PlayerDataManager.PlayerData data
     ) {
+        if (player == null || event == null) {
+            return;
+        }
+
         forEach(check -> {
-            if (!isEnabled(check) || !check.isBlockCheck()) {
+            if (!isEnabled(check)
+                    || !check.isBlockCheck()) {
                 return;
             }
 
-            try {
-                check.onBlockBreak(player, event, data);
-            } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
-            }
+            check.onBlockBreak(
+                    player,
+                    event,
+                    data
+            );
         });
     }
 
-    public void handleDeath(
-            Player player,
-            PlayerDataManager.PlayerData data
-    ) {
-        forEach(check -> {
-            if (!isEnabled(check)) {
-                return;
-            }
-
-            try {
-                check.onDeath(player, data);
-            } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
-            }
-        });
-    }
-
-    public void handleQuit(Player player) {
-        forEach(check -> {
-            try {
-                check.onQuit(player);
-            } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
-            }
-        });
-    }
+    /*
+     * ------------------------------------------------------------
+     * INTERNAL
+     * ------------------------------------------------------------
+     */
 
     private void forEach(CheckConsumer consumer) {
+        if (consumer == null) {
+            return;
+        }
+
         for (Check check : snapshot()) {
             try {
                 consumer.accept(check);
             } catch (Throwable throwable) {
-                handleCheckError(check, throwable);
+                handleCheckError(
+                        check,
+                        throwable
+                );
             }
         }
     }
 
-    private List<Check> snapshot() {
-        return List.copyOf(checks);
+    private synchronized List<Check> snapshot() {
+        return new ArrayList<>(checks);
     }
 
     private boolean isEnabled(Check check) {
@@ -261,12 +417,15 @@ public final class CheckManager {
                 "Check '" + name + "' failed: "
                         + throwable.getClass().getSimpleName()
                         + ": "
-                        + throwable.getMessage()
+                        + String.valueOf(
+                        throwable.getMessage()
+                )
         );
     }
 
     @FunctionalInterface
     private interface CheckConsumer {
+
         void accept(Check check);
     }
-                                 }
+                }
