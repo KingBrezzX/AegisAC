@@ -1,50 +1,167 @@
 package id.kingbrezz.aegisac.check;
 
-import id.kingbrezz.aegisac.AegisAC;
-import id.kingbrezz.aegisac.player.PlayerData;
+import id.kingbrezz.aegisac.player.PlayerDataManager;
+import org.bukkit.Location;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.player.PlayerTeleportEvent;
 
 public interface Check {
 
     /**
-     * Returns the unique configuration name of this check.
+     * Unique technical name of this check.
      */
     String getName();
 
     /**
-     * Returns the human-readable name of this check.
+     * Human-readable name displayed in alerts.
      */
-    String getDisplayName();
+    default String getDisplayName() {
+        return getName();
+    }
 
     /**
-     * Returns the category this check belongs to.
+     * Check category.
      */
-    CheckCategory getCategory();
+    default CheckType getType() {
+        return CheckType.OTHER;
+    }
 
     /**
-     * Returns whether this check is currently enabled.
+     * Whether this check is currently enabled.
      */
-    boolean isEnabled();
+    default boolean isEnabled() {
+        return true;
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * Capability flags
+     * ------------------------------------------------------------
+     */
+
+    default boolean isMovementCheck() {
+        return false;
+    }
+
+    default boolean isRotationCheck() {
+        return false;
+    }
+
+    default boolean isCombatCheck() {
+        return false;
+    }
+
+    default boolean isBlockCheck() {
+        return false;
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * Player lifecycle
+     * ------------------------------------------------------------
+     */
+
+    default void onJoin(Player player) {
+    }
+
+    default void onQuit(Player player) {
+    }
+
+    default void onDeath(
+            Player player,
+            PlayerDataManager.PlayerData data
+    ) {
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * Movement
+     * ------------------------------------------------------------
+     */
 
     /**
-     * Processes the check for a player.
-     *
-     * @param player the player being checked
-     * @param data   runtime data belonging to the player
+     * @return true if this movement produced a violation.
      */
-    void handle(Player player, PlayerData data);
+    default boolean onMove(
+            DetectionEngine.MovementContext context
+    ) {
+        return false;
+    }
 
-    /**
-     * Returns the plugin instance.
-     */
-    AegisAC getPlugin();
+    default void onRotation(
+            Player player,
+            Location from,
+            Location to,
+            PlayerDataManager.PlayerData data
+    ) {
+    }
 
-    /**
-     * Check categories supported by AegisAC.
+    default void onTeleport(
+            Player player,
+            Location from,
+            Location to,
+            PlayerTeleportEvent.TeleportCause cause,
+            PlayerDataManager.PlayerData data
+    ) {
+    }
+
+    default void onWorldChange(
+            Player player,
+            PlayerDataManager.PlayerData data
+    ) {
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * Combat
+     * ------------------------------------------------------------
      */
-    enum CheckCategory {
+
+    default void onAttack(
+            Player player,
+            Entity target,
+            EntityDamageByEntityEvent event,
+            PlayerDataManager.PlayerData data
+    ) {
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * Block interaction
+     * ------------------------------------------------------------
+     */
+
+    default void onBlockPlace(
+            Player player,
+            BlockPlaceEvent event,
+            PlayerDataManager.PlayerData data
+    ) {
+    }
+
+    default void onBlockBreak(
+            Player player,
+            BlockBreakEvent event,
+            PlayerDataManager.PlayerData data
+    ) {
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * Check type
+     * ------------------------------------------------------------
+     */
+
+    enum CheckType {
         MOVEMENT,
         COMBAT,
-        PLAYER
+        PLAYER,
+        WORLD,
+        PACKET,
+        BLOCK,
+        OTHER
     }
-}
+        }
