@@ -87,9 +87,10 @@ public final class AegisCommand
     }
 
     private void info(CommandSender sender) {
-        String enabled = plugin.getConfigManager().isEnabled()
-                ? "&aEnabled"
-                : "&cDisabled";
+        String enabled =
+                plugin.getConfigManager().isEnabled()
+                        ? "&aEnabled"
+                        : "&cDisabled";
 
         sender.sendMessage(
                 colorize(
@@ -189,12 +190,14 @@ public final class AegisCommand
                 colorize(
                         "&7Checks: &f"
                                 + checkManager.size()
+                )
         );
 
         sender.sendMessage(
                 colorize(
                         "&7Players tracked: &f"
                                 + playerDataManager.size()
+                )
         );
     }
 
@@ -351,6 +354,7 @@ public final class AegisCommand
 
         if (args.length == 2
                 && args[0].equalsIgnoreCase("reset")) {
+
             List<String> names = new ArrayList<>();
 
             for (Player player :
@@ -363,6 +367,7 @@ public final class AegisCommand
 
         if (args.length == 3
                 && args[0].equalsIgnoreCase("reset")) {
+
             List<String> names = new ArrayList<>();
 
             for (Check check :
@@ -383,7 +388,8 @@ public final class AegisCommand
         String lower =
                 input.toLowerCase(Locale.ROOT);
 
-        List<String> result = new ArrayList<>();
+        List<String> result =
+                new ArrayList<>();
 
         for (String value : values) {
             if (value.toLowerCase(
@@ -395,4 +401,4 @@ public final class AegisCommand
 
         return result;
     }
-                }
+                    }
