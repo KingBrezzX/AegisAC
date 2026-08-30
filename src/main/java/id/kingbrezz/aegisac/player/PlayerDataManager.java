@@ -9,202 +9,358 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class PlayerDataManager {
 
-    private final Map<UUID, PlayerData> players = new ConcurrentHashMap<>();
+    private final Map<UUID, PlayerData> players =
+            new ConcurrentHashMap<>();
 
-    public PlayerDataManager() {
-    }
-
+    /**
+     * Gets existing data or creates a new data object.
+     */
     public PlayerData get(Player player) {
+        if (player == null) {
+            throw new IllegalArgumentException(
+                    "player cannot be null"
+            );
+        }
+
         return get(player.getUniqueId());
     }
 
+    /**
+     * Gets existing data or creates a new data object.
+     */
     public PlayerData get(UUID uuid) {
-        return players.computeIfAbsent(uuid, ignored -> new PlayerData());
+        if (uuid == null) {
+            throw new IllegalArgumentException(
+                    "uuid cannot be null"
+            );
+        }
+
+        return players.computeIfAbsent(
+                uuid,
+                PlayerData::new
+        );
     }
 
-    public boolean contains(Player player) {
-        return players.containsKey(player.getUniqueId());
+    /**
+     * Checks whether the player is currently tracked.
+     */
+    public boolean contains(UUID uuid) {
+        return uuid != null
+                && players.containsKey(uuid);
     }
 
+    /**
+     * Removes player data.
+     */
     public void remove(Player player) {
         if (player != null) {
-            players.remove(player.getUniqueId());
+            remove(player.getUniqueId());
         }
     }
 
+    /**
+     * Removes player data.
+     */
     public void remove(UUID uuid) {
         if (uuid != null) {
             players.remove(uuid);
         }
     }
 
-    public void clear() {
-        players.clear();
-    }
-
+    /**
+     * Number of tracked players.
+     */
     public int size() {
         return players.size();
     }
 
-    public Map<UUID, PlayerData> getPlayers() {
-        return Map.copyOf(players);
+    /**
+     * Clears all runtime detection data.
+     */
+    public void shutdown() {
+        players.clear();
     }
 
+    /**
+     * Runtime data belonging to one player.
+     */
     public static final class PlayerData {
+
+        private final UUID uuid;
 
         private Location lastLocation;
         private Location lastValidLocation;
 
-        private long lastMovementTime;
+        private long lastMoveTime;
+        private long lastRotationTime;
         private long lastAttackTime;
-        private long lastPlaceTime;
-        private long lastBreakTime;
 
-        private double lastDeltaX;
-        private double lastDeltaY;
-        private double lastDeltaZ;
-
-        private double lastHorizontalDistance;
-        private double lastDistance;
+        private double horizontalDistance;
+        private double verticalDistance;
 
         private float lastYaw;
         private float lastPitch;
 
+        private int ticksSinceTeleport;
+        private int ticksSinceJoin;
+
+        private boolean onGround;
         private boolean lastOnGround;
-        private boolean lastSprinting;
-        private boolean lastSwimming;
-        private boolean lastGliding;
-        private boolean lastFlying;
 
-        private int movementTicks;
-        private int airTicks;
-        private int groundTicks;
+        private boolean recentlyTeleported;
+        private boolean exempt;
 
-        private long joinTime;
+        private PlayerData(UUID uuid) {
+            this.uuid = uuid;
 
-        private double ping;
-        private double tps = 20.0;
+            long now = System.currentTimeMillis();
 
-        private final Map<String, CheckData> checks =
-                new ConcurrentHashMap<>();
+            this.lastMoveTime = now;
+            this.lastRotationTime = now;
 
-        public PlayerData() {
-            this.joinTime = System.currentTimeMillis();
-            this.lastMovementTime = this.joinTime;
+            this.ticksSinceTeleport = 100;
+            this.ticksSinceJoin = 0;
         }
+
+        public UUID getUuid() {
+            return uuid;
+        }
+
+        /*
+         * --------------------------------------------------------
+         * MOVEMENT
+         * --------------------------------------------------------
+         */
 
         public void updateMovement(Player player) {
-            Location current = player.getLocation();
-
-            if (lastLocation != null) {
-                lastDeltaX = current.getX() - lastLocation.getX();
-                lastDeltaY = current.getY() - lastLocation.getY();
-                lastDeltaZ = current.getZ() - lastLocation.getZ();
-
-                lastHorizontalDistance = Math.sqrt(
-                        (lastDeltaX * lastDeltaX)
-                                + (lastDeltaZ * lastDeltaZ)
-                );
-
-                lastDistance = Math.sqrt(
-                        (lastDeltaX * lastDeltaX)
-                                + (lastDeltaY * lastDeltaY)
-                                + (lastDeltaZ * lastDeltaZ)
-                );
-            }
-
-            lastYaw = current.getYaw();
-            lastPitch = current.getPitch();
-
-            lastOnGround = player.isOnGround();
-            lastSprinting = player.isSprinting();
-            lastSwimming = player.isSwimming();
-            lastGliding = player.isGliding();
-            lastFlying = player.isFlying();
-
-            movementTicks++;
-
-            if (lastOnGround) {
-                groundTicks++;
-                airTicks = 0;
-            } else {
-                airTicks++;
-                groundTicks = 0;
-            }
-
-            lastLocation = current.clone();
-            lastMovementTime = System.currentTimeMillis();
-
-            updatePing(player);
-        }
-
-        public void markValidLocation(Location location) {
-            if (location == null) {
+            if (player == null) {
                 return;
             }
 
+            Location location = player.getLocation();
+
+            if (!isFinite(location)) {
+                return;
+            }
+
+            lastOnGround = onGround;
+            onGround = player.isOnGround();
+
+            lastLocation = location.clone();
+
+            if (lastValidLocation == null) {
+                lastValidLocation = location.clone();
+            }
+
+            lastYaw = location.getYaw();
+            lastPitch = location.getPitch();
+
+            lastMoveTime = System.currentTimeMillis();
+
+            ticksSinceJoin++;
+            ticksSinceTeleport++;
+        }
+
+        public void recordMovement(
+                Location from,
+                Location to
+        ) {
+            if (from == null || to == null) {
+                return;
+            }
+
+            if (!isFinite(from) || !isFinite(to)) {
+                return;
+            }
+
+            if (from.getWorld() == null
+                    || to.getWorld() == null
+                    || !from.getWorld().equals(to.getWorld())) {
+                return;
+            }
+
+            double deltaX =
+                    to.getX() - from.getX();
+
+            double deltaY =
+                    to.getY() - from.getY();
+
+            double deltaZ =
+                    to.getZ() - from.getZ();
+
+            horizontalDistance = Math.sqrt(
+                    deltaX * deltaX
+                            + deltaZ * deltaZ
+            );
+
+            verticalDistance = deltaY;
+
+            lastOnGround = onGround;
+
+            lastLocation = to.clone();
+
+            lastYaw = to.getYaw();
+            lastPitch = to.getPitch();
+
+            lastMoveTime =
+                    System.currentTimeMillis();
+
+            ticksSinceTeleport++;
+
+            recentlyTeleported =
+                    ticksSinceTeleport < 3;
+        }
+
+        public void recordRotation(
+                Location from,
+                Location to
+        ) {
+            if (from == null || to == null) {
+                return;
+            }
+
+            if (!isFinite(from) || !isFinite(to)) {
+                return;
+            }
+
+            lastYaw = to.getYaw();
+            lastPitch = to.getPitch();
+
+            lastRotationTime =
+                    System.currentTimeMillis();
+        }
+
+        public void resetMovement(
+                Location location
+        ) {
+            if (location == null
+                    || !isFinite(location)) {
+                return;
+            }
+
+            lastLocation = location.clone();
             lastValidLocation = location.clone();
+
+            horizontalDistance = 0.0D;
+            verticalDistance = 0.0D;
+
+            lastYaw = location.getYaw();
+            lastPitch = location.getPitch();
+
+            lastMoveTime =
+                    System.currentTimeMillis();
+
+            ticksSinceTeleport = 0;
+            recentlyTeleported = true;
         }
 
-        public Location getLastLocation() {
-            return cloneLocation(lastLocation);
+        public void resetDetectionState() {
+            horizontalDistance = 0.0D;
+            verticalDistance = 0.0D;
+
+            ticksSinceTeleport = 0;
+            ticksSinceJoin = 0;
+
+            recentlyTeleported = false;
+
+            lastAttackTime = 0L;
+
+            long now =
+                    System.currentTimeMillis();
+
+            lastMoveTime = now;
+            lastRotationTime = now;
+
+            if (lastLocation != null) {
+                lastValidLocation =
+                        lastLocation.clone();
+            }
         }
 
-        public Location getLastValidLocation() {
-            return cloneLocation(lastValidLocation);
-        }
+        /*
+         * --------------------------------------------------------
+         * COMBAT
+         * --------------------------------------------------------
+         */
 
-        public boolean hasValidLocation() {
-            return lastValidLocation != null;
-        }
-
-        public long getLastMovementTime() {
-            return lastMovementTime;
+        public void recordAttack() {
+            lastAttackTime =
+                    System.currentTimeMillis();
         }
 
         public long getLastAttackTime() {
             return lastAttackTime;
         }
 
-        public void markAttack() {
-            lastAttackTime = System.currentTimeMillis();
+        public long getMillisSinceAttack() {
+            if (lastAttackTime <= 0L) {
+                return Long.MAX_VALUE;
+            }
+
+            return Math.max(
+                    0L,
+                    System.currentTimeMillis()
+                            - lastAttackTime
+            );
         }
 
-        public long getLastPlaceTime() {
-            return lastPlaceTime;
+        /*
+         * --------------------------------------------------------
+         * LOCATION
+         * --------------------------------------------------------
+         */
+
+        public Location getLastLocation() {
+            return cloneLocation(lastLocation);
         }
 
-        public void markPlace() {
-            lastPlaceTime = System.currentTimeMillis();
+        public Location getLastValidLocation() {
+            return cloneLocation(
+                    lastValidLocation
+            );
         }
 
-        public long getLastBreakTime() {
-            return lastBreakTime;
+        public void setLastValidLocation(
+                Location location
+        ) {
+            if (location == null
+                    || !isFinite(location)) {
+                return;
+            }
+
+            lastValidLocation =
+                    location.clone();
         }
 
-        public void markBreak() {
-            lastBreakTime = System.currentTimeMillis();
+        /*
+         * --------------------------------------------------------
+         * DISTANCE
+         * --------------------------------------------------------
+         */
+
+        public double getHorizontalDistance() {
+            return horizontalDistance;
         }
 
-        public double getLastDeltaX() {
-            return lastDeltaX;
+        public double getVerticalDistance() {
+            return verticalDistance;
         }
 
-        public double getLastDeltaY() {
-            return lastDeltaY;
+        public double getMovementDistance() {
+            return Math.sqrt(
+                    horizontalDistance
+                            * horizontalDistance
+                            +
+                            verticalDistance
+                                    * verticalDistance
+            );
         }
 
-        public double getLastDeltaZ() {
-            return lastDeltaZ;
-        }
-
-        public double getLastHorizontalDistance() {
-            return lastHorizontalDistance;
-        }
-
-        public double getLastDistance() {
-            return lastDistance;
-        }
+        /*
+         * --------------------------------------------------------
+         * ROTATION
+         * --------------------------------------------------------
+         */
 
         public float getLastYaw() {
             return lastYaw;
@@ -214,211 +370,131 @@ public final class PlayerDataManager {
             return lastPitch;
         }
 
+        public long getLastRotationTime() {
+            return lastRotationTime;
+        }
+
+        public long getMillisSinceRotation() {
+            return Math.max(
+                    0L,
+                    System.currentTimeMillis()
+                            - lastRotationTime
+            );
+        }
+
+        /*
+         * --------------------------------------------------------
+         * GROUND
+         * --------------------------------------------------------
+         */
+
+        public boolean isOnGround() {
+            return onGround;
+        }
+
         public boolean wasOnGround() {
             return lastOnGround;
         }
 
-        public boolean wasSprinting() {
-            return lastSprinting;
+        public void setOnGround(
+                boolean onGround
+        ) {
+            this.lastOnGround = this.onGround;
+            this.onGround = onGround;
         }
 
-        public boolean wasSwimming() {
-            return lastSwimming;
+        /*
+         * --------------------------------------------------------
+         * TELEPORT / JOIN
+         * --------------------------------------------------------
+         */
+
+        public int getTicksSinceTeleport() {
+            return ticksSinceTeleport;
         }
 
-        public boolean wasGliding() {
-            return lastGliding;
+        public int getTicksSinceJoin() {
+            return ticksSinceJoin;
         }
 
-        public boolean wasFlying() {
-            return lastFlying;
+        public boolean isRecentlyTeleported() {
+            return recentlyTeleported;
         }
 
-        public int getMovementTicks() {
-            return movementTicks;
+        public void setRecentlyTeleported(
+                boolean recentlyTeleported
+        ) {
+            this.recentlyTeleported =
+                    recentlyTeleported;
         }
 
-        public int getAirTicks() {
-            return airTicks;
+        /*
+         * --------------------------------------------------------
+         * EXEMPTION
+         * --------------------------------------------------------
+         */
+
+        public boolean isExempt() {
+            return exempt;
         }
 
-        public int getGroundTicks() {
-            return groundTicks;
+        public void setExempt(
+                boolean exempt
+        ) {
+            this.exempt = exempt;
         }
 
-        public long getJoinTime() {
-            return joinTime;
+        /*
+         * --------------------------------------------------------
+         * TIME
+         * --------------------------------------------------------
+         */
+
+        public long getLastMoveTime() {
+            return lastMoveTime;
         }
 
-        public long getPlayTime() {
-            return System.currentTimeMillis() - joinTime;
-        }
-
-        public double getPing() {
-            return ping;
-        }
-
-        public void setPing(double ping) {
-            this.ping = Math.max(0.0, ping);
-        }
-
-        private void updatePing(Player player) {
-            try {
-                setPing(player.getPing());
-            } catch (Throwable ignored) {
-                /*
-                 * Keep the last known ping if the server implementation
-                 * does not expose it.
-                 */
-            }
-        }
-
-        public double getTps() {
-            return tps;
-        }
-
-        public void setTps(double tps) {
-            if (Double.isFinite(tps)) {
-                this.tps = Math.max(1.0, Math.min(20.0, tps));
-            }
-        }
-
-        public CheckData getCheck(String checkName) {
-            return checks.computeIfAbsent(
-                    normalize(checkName),
-                    ignored -> new CheckData()
+        public long getMillisSinceMove() {
+            return Math.max(
+                    0L,
+                    System.currentTimeMillis()
+                            - lastMoveTime
             );
         }
 
-        public void resetCheck(String checkName) {
-            checks.remove(normalize(checkName));
+        /*
+         * --------------------------------------------------------
+         * INTERNAL
+         * --------------------------------------------------------
+         */
+
+        private static Location cloneLocation(
+                Location location
+        ) {
+            return location == null
+                    ? null
+                    : location.clone();
         }
 
-        public Map<String, CheckData> getChecks() {
-            return Map.copyOf(checks);
-        }
-
-        private static String normalize(String name) {
-            return name
-                    .toLowerCase()
-                    .replace('-', '_')
-                    .replace(' ', '_');
-        }
-
-        private static Location cloneLocation(Location location) {
-            return location == null ? null : location.clone();
+        private static boolean isFinite(
+                Location location
+        ) {
+            return location.getWorld() != null
+                    && Double.isFinite(
+                    location.getX()
+            )
+                    && Double.isFinite(
+                    location.getY()
+            )
+                    && Double.isFinite(
+                    location.getZ()
+            )
+                    && Float.isFinite(
+                    location.getYaw()
+            )
+                    && Float.isFinite(
+                    location.getPitch()
+            );
         }
     }
-
-    public static final class CheckData {
-
-        private double buffer;
-        private double violations;
-
-        private long lastFlagTime;
-        private long lastAlertTime;
-
-        private int flags;
-        private int consecutiveFlags;
-
-        public double getBuffer() {
-            return buffer;
-        }
-
-        public void setBuffer(double buffer) {
-            this.buffer = Math.max(0.0, buffer);
-        }
-
-        public void increaseBuffer(double amount, double maximum) {
-            if (!Double.isFinite(amount)) {
-                return;
             }
-
-            double safeMaximum = Math.max(0.0, maximum);
-
-            buffer = Math.min(
-                    safeMaximum,
-                    Math.max(0.0, buffer + amount)
-            );
-        }
-
-        public void decreaseBuffer(double amount) {
-            if (!Double.isFinite(amount)) {
-                return;
-            }
-
-            buffer = Math.max(0.0, buffer - Math.max(0.0, amount));
-        }
-
-        public double getViolations() {
-            return violations;
-        }
-
-        public void addViolation(double amount) {
-            if (!Double.isFinite(amount)) {
-                return;
-            }
-
-            violations = Math.max(
-                    0.0,
-                    violations + Math.max(0.0, amount)
-            );
-
-            flags++;
-            consecutiveFlags++;
-            lastFlagTime = System.currentTimeMillis();
-        }
-
-        public void removeViolation(double amount) {
-            if (!Double.isFinite(amount)) {
-                return;
-            }
-
-            violations = Math.max(
-                    0.0,
-                    violations - Math.max(0.0, amount)
-            );
-        }
-
-        public void decayViolations(double amount) {
-            removeViolation(amount);
-
-            if (violations <= 0.0) {
-                consecutiveFlags = 0;
-            }
-        }
-
-        public long getLastFlagTime() {
-            return lastFlagTime;
-        }
-
-        public long getLastAlertTime() {
-            return lastAlertTime;
-        }
-
-        public void markAlert() {
-            lastAlertTime = System.currentTimeMillis();
-        }
-
-        public int getFlags() {
-            return flags;
-        }
-
-        public int getConsecutiveFlags() {
-            return consecutiveFlags;
-        }
-
-        public void resetConsecutiveFlags() {
-            consecutiveFlags = 0;
-        }
-
-        public void reset() {
-            buffer = 0.0;
-            violations = 0.0;
-            lastFlagTime = 0L;
-            lastAlertTime = 0L;
-            flags = 0;
-            consecutiveFlags = 0;
-        }
-    }
-        }
