@@ -2,6 +2,7 @@ package id.kingbrezz.aegisac;
 
 import id.kingbrezz.aegisac.alert.AlertManager;
 import id.kingbrezz.aegisac.check.CheckManager;
+import id.kingbrezz.aegisac.check.DetectionEngine;
 import id.kingbrezz.aegisac.command.AegisCommand;
 import id.kingbrezz.aegisac.listener.AegisListener;
 import id.kingbrezz.aegisac.manager.ConfigManager;
@@ -12,6 +13,7 @@ import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.Objects;
 import java.util.logging.Level;
 
 public final class AegisAC extends JavaPlugin {
@@ -23,35 +25,81 @@ public final class AegisAC extends JavaPlugin {
     private PlayerDataManager playerDataManager;
     private CheckManager checkManager;
     private AlertManager alertManager;
+    private DetectionEngine detectionEngine;
 
     @Override
     public void onEnable() {
         instance = this;
 
+        getLogger().info(
+                "Starting AegisAC v"
+                        + getDescription().getVersion()
+                        + "..."
+        );
+
         saveDefaultConfig();
+        saveResource("messages.yml", false);
+
+        /*
+         * ---------------------------------------------------------
+         * MANAGERS
+         * ---------------------------------------------------------
+         */
 
         configManager = new ConfigManager(this);
+
         messageManager = new MessageManager(this);
 
-        // PlayerDataManager menggunakan constructor tanpa argument.
         playerDataManager = new PlayerDataManager();
 
         checkManager = new CheckManager(this);
 
-        // AlertManager membutuhkan plugin + MessageManager.
         alertManager = new AlertManager(
                 this,
                 messageManager
         );
 
+        /*
+         * ---------------------------------------------------------
+         * DETECTION ENGINE
+         * ---------------------------------------------------------
+         *
+         * There is only ONE engine instance for the entire plugin.
+         */
+
+        detectionEngine = new DetectionEngine(
+                this,
+                checkManager,
+                playerDataManager
+        );
+
+        /*
+         * ---------------------------------------------------------
+         * LISTENERS
+         * ---------------------------------------------------------
+         */
+
         registerListeners();
+
+        /*
+         * ---------------------------------------------------------
+         * COMMANDS
+         * ---------------------------------------------------------
+         */
+
         registerCommands();
 
-        getLogger().info("AegisAC enabled successfully.");
+        getLogger().info(
+                "AegisAC enabled successfully."
+        );
     }
 
     @Override
     public void onDisable() {
+        getLogger().info(
+                "Disabling AegisAC..."
+        );
+
         if (playerDataManager != null) {
             try {
                 playerDataManager.shutdown();
@@ -64,41 +112,62 @@ public final class AegisAC extends JavaPlugin {
             }
         }
 
+        detectionEngine = null;
+        alertManager = null;
+        checkManager = null;
+        playerDataManager = null;
+        messageManager = null;
+        configManager = null;
+
         if (instance == this) {
             instance = null;
         }
 
-        getLogger().info("AegisAC disabled.");
+        getLogger().info(
+                "AegisAC disabled."
+        );
     }
 
     private void registerListeners() {
-        PluginManager pluginManager = getServer().getPluginManager();
+        PluginManager pluginManager =
+                getServer().getPluginManager();
 
         pluginManager.registerEvents(
                 new AegisListener(this),
                 this
         );
+
+        getLogger().info(
+                "AegisAC listeners registered."
+        );
     }
 
     private void registerCommands() {
-        PluginCommand command = getCommand("aegisac");
+        PluginCommand command =
+                getCommand("aegisac");
 
         if (command == null) {
-            getLogger().severe(
+            getLogger().log(
+                    Level.SEVERE,
                     "Command 'aegisac' is missing from plugin.yml."
             );
             return;
         }
 
-        AegisCommand aegisCommand = new AegisCommand(
-                this,
-                messageManager,
-                checkManager,
-                playerDataManager
-        );
+        AegisCommand aegisCommand =
+                new AegisCommand(
+                        this,
+                        messageManager,
+                        checkManager,
+                        playerDataManager
+                );
 
         command.setExecutor(aegisCommand);
         command.setTabCompleter(aegisCommand);
+
+        getLogger().info(
+                "AegisAC command registered."
+        );
     }
 
     public ConfigManager getConfigManager() {
@@ -121,13 +190,14 @@ public final class AegisAC extends JavaPlugin {
         return alertManager;
     }
 
-    public static AegisAC getInstance() {
-        if (instance == null) {
-            throw new IllegalStateException(
-                    "AegisAC is not enabled."
-            );
-        }
-
-        return instance;
+    public DetectionEngine getDetectionEngine() {
+        return detectionEngine;
     }
-            }
+
+    public static AegisAC getInstance() {
+        return Objects.requireNonNull(
+                instance,
+                "AegisAC is not enabled."
+        );
+    }
+    }
