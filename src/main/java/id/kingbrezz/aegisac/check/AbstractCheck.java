@@ -2,60 +2,47 @@ package id.kingbrezz.aegisac.check;
 
 import id.kingbrezz.aegisac.AegisAC;
 import id.kingbrezz.aegisac.player.PlayerDataManager;
-import org.bukkit.Location;
-import org.bukkit.entity.Entity;
+import id.kingbrezz.aegisac.violation.ViolationEvent;
 import org.bukkit.entity.Player;
-import org.bukkit.event.block.BlockBreakEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
-import org.bukkit.event.player.PlayerTeleportEvent;
 
+import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Base implementation shared by all AegisAC checks.
+ * Base implementation for AegisAC checks.
  *
- * The class deliberately keeps detection state inside the check instead
- * of mixing detection, punishment and event registration together.
+ * Provides lightweight per-player violation tracking,
+ * decay and violation event creation.
  */
 public abstract class AbstractCheck implements Check {
 
     protected final AegisAC plugin;
 
     private final String name;
-    private final String displayName;
-    private final CheckType type;
 
-    private boolean enabled;
+    private final Map<UUID, ViolationState> violations =
+            new ConcurrentHashMap<>();
+
+    private volatile boolean enabled = true;
 
     protected AbstractCheck(
             AegisAC plugin,
-            String name,
-            CheckType type
+            String name
     ) {
-        this(
+        this.plugin = Objects.requireNonNull(
                 plugin,
-                name,
-                name,
-                type
+                "plugin"
         );
-    }
 
-    protected AbstractCheck(
-            AegisAC plugin,
-            String name,
-            String displayName,
-            CheckType type
-    ) {
-        this.plugin = Objects.requireNonNull(plugin, "plugin");
-        this.name = Objects.requireNonNull(name, "name");
-        this.displayName = Objects.requireNonNull(
-                displayName,
-                "displayName"
-        );
-        this.type = Objects.requireNonNull(type, "type");
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException(
+                    "name cannot be null or blank"
+            );
+        }
 
-        this.enabled = loadEnabledState();
+        this.name = name;
     }
 
     @Override
@@ -64,89 +51,358 @@ public abstract class AbstractCheck implements Check {
     }
 
     @Override
-    public final String getDisplayName() {
-        return displayName;
+    public final boolean isEnabled() {
+        return enabled;
     }
 
     @Override
-    public final CheckType getType() {
-        return type;
-    }
-
-    @Override
-    public boolean isEnabled() {
-        return enabled && plugin.isEnabled();
-    }
-
-    public final void setEnabled(boolean enabled) {
+    public final void setEnabled(
+            boolean enabled
+    ) {
         this.enabled = enabled;
     }
 
+    /*
+     * ------------------------------------------------------------
+     * VIOLATION SYSTEM
+     * ------------------------------------------------------------
+     */
+
     /**
-     * Reloads the enabled state from configuration.
+     * Adds violation level to a player.
+     *
+     * @return resulting violation level
      */
-    public void reload() {
-        this.enabled = loadEnabledState();
-        onReload();
+    protected final double fail(
+            Player player,
+            double amount
+    ) {
+        if (player == null
+                || !player.isOnline()
+                || !Double.isFinite(amount)
+                || amount <= 0.0D) {
+            return 0.0D;
+        }
+
+        ViolationState state =
+                violations.computeIfAbsent(
+                        player.getUniqueId(),
+                        ignored -> new ViolationState()
+                );
+
+        long now =
+                System.currentTimeMillis();
+
+        state.decay(now);
+
+        state.violationLevel =
+                Math.min(
+                        100.0D,
+                        state.violationLevel
+                                + amount
+                );
+
+        state.lastViolation =
+                now;
+
+        return state.violationLevel;
     }
 
-    protected void onReload() {
+    /**
+     * Reduces violation level for a player.
+     */
+    protected final void reward(
+            Player player,
+            double amount
+    ) {
+        if (player == null
+                || !Double.isFinite(amount)
+                || amount <= 0.0D) {
+            return;
+        }
+
+        ViolationState state =
+                violations.get(
+                        player.getUniqueId()
+                );
+
+        if (state == null) {
+            return;
+        }
+
+        long now =
+                System.currentTimeMillis();
+
+        state.decay(now);
+
+        state.violationLevel =
+                Math.max(
+                        0.0D,
+                        state.violationLevel
+                                - amount
+                );
+    }
+
+    /**
+     * Gets current violation level.
+     */
+    protected final double getViolationLevel(
+            Player player
+    ) {
+        if (player == null) {
+            return 0.0D;
+        }
+
+        return getViolationLevel(
+                player.getUniqueId()
+        );
+    }
+
+    protected final double getViolationLevel(
+            UUID uuid
+    ) {
+        if (uuid == null) {
+            return 0.0D;
+        }
+
+        ViolationState state =
+                violations.get(uuid);
+
+        if (state == null) {
+            return 0.0D;
+        }
+
+        state.decay(
+                System.currentTimeMillis()
+        );
+
+        return state.violationLevel;
+    }
+
+    /**
+     * Resets a player's violation level.
+     */
+    protected final void resetViolations(
+            Player player
+    ) {
+        if (player != null) {
+            resetViolations(
+                    player.getUniqueId()
+            );
+        }
+    }
+
+    protected final void resetViolations(
+            UUID uuid
+    ) {
+        if (uuid != null) {
+            violations.remove(uuid);
+        }
+    }
+
+    /**
+     * Clears all runtime state.
+     */
+    protected final void clearViolations() {
+        violations.clear();
     }
 
     /*
      * ------------------------------------------------------------
-     * Event capability defaults
+     * ALERT / EVENT
      * ------------------------------------------------------------
      */
 
-    @Override
-    public boolean isMovementCheck() {
-        return type == CheckType.MOVEMENT;
+    /**
+     * Creates and dispatches a violation event.
+     *
+     * @return true when the event was dispatched
+     */
+    protected final boolean flag(
+            Player player,
+            double amount,
+            double confidence,
+            String action,
+            String detail
+    ) {
+        if (player == null
+                || !player.isOnline()
+                || player.isDead()) {
+            return false;
+        }
+
+        if (isExempt(player)) {
+            return false;
+        }
+
+        if (!Double.isFinite(confidence)) {
+            confidence = 0.0D;
+        }
+
+        confidence =
+                Math.max(
+                        0.0D,
+                        Math.min(
+                                1.0D,
+                                confidence
+                        )
+                );
+
+        double vl =
+                fail(
+                        player,
+                        amount
+                );
+
+        ViolationEvent event =
+                new ViolationEvent(
+                        player,
+                        name,
+                        vl,
+                        confidence,
+                        getPing(player),
+                        action,
+                        detail
+                );
+
+        if (plugin.getAlertManager() != null) {
+            plugin.getAlertManager()
+                    .handle(event);
+        }
+
+        return true;
     }
 
-    @Override
-    public boolean isRotationCheck() {
-        return false;
-    }
-
-    @Override
-    public boolean isCombatCheck() {
-        return type == CheckType.COMBAT;
-    }
-
-    @Override
-    public boolean isBlockCheck() {
-        return type == CheckType.BLOCK;
+    /**
+     * Shortcut for a normal detection.
+     */
+    protected final boolean flag(
+            Player player,
+            double amount,
+            double confidence,
+            String detail
+    ) {
+        return flag(
+                player,
+                amount,
+                confidence,
+                "none",
+                detail
+        );
     }
 
     /*
      * ------------------------------------------------------------
-     * Lifecycle hooks
+     * COOLDOWN
+     * ------------------------------------------------------------
+     */
+
+    /**
+     * Returns true if the check should currently wait
+     * before producing another alert.
+     */
+    protected final boolean isOnCooldown(
+            Player player,
+            long cooldownMillis
+    ) {
+        if (player == null
+                || cooldownMillis <= 0L) {
+            return false;
+        }
+
+        ViolationState state =
+                violations.get(
+                        player.getUniqueId()
+                );
+
+        if (state == null
+                || state.lastViolation <= 0L) {
+            return false;
+        }
+
+        long elapsed =
+                System.currentTimeMillis()
+                        - state.lastViolation;
+
+        return elapsed >= 0L
+                && elapsed < cooldownMillis;
+    }
+
+    /**
+     * Returns milliseconds since the last violation.
+     */
+    protected final long millisSinceViolation(
+            Player player
+    ) {
+        if (player == null) {
+            return Long.MAX_VALUE;
+        }
+
+        ViolationState state =
+                violations.get(
+                        player.getUniqueId()
+                );
+
+        if (state == null
+                || state.lastViolation <= 0L) {
+            return Long.MAX_VALUE;
+        }
+
+        return Math.max(
+                0L,
+                System.currentTimeMillis()
+                        - state.lastViolation
+        );
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * EXEMPTION
+     * ------------------------------------------------------------
+     */
+
+    protected boolean isExempt(
+            Player player
+    ) {
+        if (player == null) {
+            return true;
+        }
+
+        if (player.hasPermission(
+                "aegisac.bypass"
+        )) {
+            return true;
+        }
+
+        PlayerDataManager.PlayerData data =
+                plugin.getPlayerDataManager()
+                        .get(player);
+
+        return data.isExempt();
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * PLAYER LIFECYCLE
      * ------------------------------------------------------------
      */
 
     @Override
     public void onJoin(Player player) {
         if (player != null) {
-            handleJoin(player);
+            resetViolations(player);
         }
     }
 
     @Override
-    public void onQuit(Player player) {
-        if (player != null) {
-            handleQuit(player);
-        }
-    }
-
-    @Override
-    public void onDeath(
+    public void onTeleport(
             Player player,
+            org.bukkit.Location from,
+            org.bukkit.Location to,
+            org.bukkit.event.player.PlayerTeleportEvent.TeleportCause cause,
             PlayerDataManager.PlayerData data
     ) {
-        if (player != null) {
-            handleDeath(player, data);
-        }
+        resetViolations(player);
     }
 
     @Override
@@ -154,277 +410,92 @@ public abstract class AbstractCheck implements Check {
             Player player,
             PlayerDataManager.PlayerData data
     ) {
-        if (player != null) {
-            handleWorldChange(player, data);
-        }
+        resetViolations(player);
     }
 
     @Override
-    public void onTeleport(
+    public void onDeath(
             Player player,
-            Location from,
-            Location to,
-            PlayerTeleportEvent.TeleportCause cause,
             PlayerDataManager.PlayerData data
     ) {
-        if (player != null) {
-            handleTeleport(
-                    player,
-                    from,
-                    to,
-                    cause,
-                    data
-            );
-        }
+        resetViolations(player);
+    }
+
+    @Override
+    public void onQuit(Player player) {
+        resetViolations(player);
     }
 
     /*
      * ------------------------------------------------------------
-     * Detection hooks
+     * UTILITY
      * ------------------------------------------------------------
      */
 
-    @Override
-    public boolean onMove(
-            DetectionEngine.MovementContext context
+    protected final int getPing(
+            Player player
     ) {
-        if (context == null || !isEnabled()) {
-            return false;
+        if (player == null) {
+            return 0;
         }
 
-        return handleMove(context);
-    }
-
-    @Override
-    public void onRotation(
-            Player player,
-            Location from,
-            Location to,
-            PlayerDataManager.PlayerData data
-    ) {
-        if (isEnabled()) {
-            handleRotation(
-                    player,
-                    from,
-                    to,
-                    data
-            );
-        }
-    }
-
-    @Override
-    public void onAttack(
-            Player player,
-            Entity target,
-            EntityDamageByEntityEvent event,
-            PlayerDataManager.PlayerData data
-    ) {
-        if (isEnabled()) {
-            handleAttack(
-                    player,
-                    target,
-                    event,
-                    data
-            );
-        }
-    }
-
-    @Override
-    public void onBlockPlace(
-            Player player,
-            BlockPlaceEvent event,
-            PlayerDataManager.PlayerData data
-    ) {
-        if (isEnabled()) {
-            handleBlockPlace(
-                    player,
-                    event,
-                    data
-            );
-        }
-    }
-
-    @Override
-    public void onBlockBreak(
-            Player player,
-            BlockBreakEvent event,
-            PlayerDataManager.PlayerData data
-    ) {
-        if (isEnabled()) {
-            handleBlockBreak(
-                    player,
-                    event,
-                    data
-            );
-        }
-    }
-
-    /*
-     * ------------------------------------------------------------
-     * Override points for concrete checks
-     * ------------------------------------------------------------
-     */
-
-    protected void handleJoin(Player player) {
-    }
-
-    protected void handleQuit(Player player) {
-    }
-
-    protected void handleDeath(
-            Player player,
-            PlayerDataManager.PlayerData data
-    ) {
-    }
-
-    protected void handleWorldChange(
-            Player player,
-            PlayerDataManager.PlayerData data
-    ) {
-    }
-
-    protected void handleTeleport(
-            Player player,
-            Location from,
-            Location to,
-            PlayerTeleportEvent.TeleportCause cause,
-            PlayerDataManager.PlayerData data
-    ) {
-    }
-
-    protected void handleRotation(
-            Player player,
-            Location from,
-            Location to,
-            PlayerDataManager.PlayerData data
-    ) {
-    }
-
-    /**
-     * Concrete movement checks return true only when their detection
-     * logic has actually reached a violation condition.
-     */
-    protected boolean handleMove(
-            DetectionEngine.MovementContext context
-    ) {
-        return false;
-    }
-
-    protected void handleAttack(
-            Player player,
-            Entity target,
-            EntityDamageByEntityEvent event,
-            PlayerDataManager.PlayerData data
-    ) {
-    }
-
-    protected void handleBlockPlace(
-            Player player,
-            BlockPlaceEvent event,
-            PlayerDataManager.PlayerData data
-    ) {
-    }
-
-    protected void handleBlockBreak(
-            Player player,
-            BlockBreakEvent event,
-            PlayerDataManager.PlayerData data
-    ) {
-    }
-
-    /*
-     * ------------------------------------------------------------
-     * Configuration
-     * ------------------------------------------------------------
-     */
-
-    private boolean loadEnabledState() {
-        /*
-         * Keep the base class safe if a custom ConfigManager is temporarily
-         * unavailable during plugin bootstrap.
-         *
-         * Concrete checks can override reload()/isEnabled() when they need
-         * more detailed configuration.
-         */
         try {
-            if (plugin.getConfigManager() == null) {
-                return true;
+            return Math.max(
+                    0,
+                    player.getPing()
+            );
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    protected final AegisAC getPlugin() {
+        return plugin;
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * INTERNAL STATE
+     * ------------------------------------------------------------
+     */
+
+    private static final class ViolationState {
+
+        private double violationLevel;
+        private long lastViolation;
+
+        private long lastDecay;
+
+        private void decay(long now) {
+            if (lastDecay == 0L) {
+                lastDecay = now;
+                return;
             }
 
-            String path = "checks." + name + ".enabled";
+            long elapsed =
+                    now - lastDecay;
 
-            return plugin.getConfigManager()
-                    .getBoolean(path, true);
+            if (elapsed < 1000L) {
+                return;
+            }
 
-        } catch (Throwable ignored) {
-            return true;
+            /*
+             * Decay approximately 1 VL per second.
+             *
+             * The state is intentionally bounded so a player
+             * cannot accumulate unbounded VL.
+             */
+            double seconds =
+                    elapsed / 1000.0D;
+
+            violationLevel =
+                    Math.max(
+                            0.0D,
+                            violationLevel
+                                    - seconds
+                    );
+
+            lastDecay = now;
         }
-    }
-
-    protected final boolean getBoolean(
-            String path,
-            boolean def
-    ) {
-        try {
-            return plugin.getConfigManager()
-                    .getBoolean(path, def);
-        } catch (Throwable ignored) {
-            return def;
-        }
-    }
-
-    protected final int getInt(
-            String path,
-            int def
-    ) {
-        try {
-            return plugin.getConfigManager()
-                    .getInt(path, def);
-        } catch (Throwable ignored) {
-            return def;
-        }
-    }
-
-    protected final long getLong(
-            String path,
-            long def
-    ) {
-        try {
-            return plugin.getConfigManager()
-                    .getLong(path, def);
-        } catch (Throwable ignored) {
-            return def;
-        }
-    }
-
-    protected final double getDouble(
-            String path,
-            double def
-    ) {
-        try {
-            return plugin.getConfigManager()
-                    .getDouble(path, def);
-        } catch (Throwable ignored) {
-            return def;
-        }
-    }
-
-    protected final String getString(
-            String path,
-            String def
-    ) {
-        try {
-            return plugin.getConfigManager()
-                    .getString(path, def);
-        } catch (Throwable ignored) {
-            return def;
-        }
-    }
-
-    /**
-     * Returns the configuration prefix for this check.
-     */
-    protected final String configPath() {
-        return "checks." + name;
     }
     }
