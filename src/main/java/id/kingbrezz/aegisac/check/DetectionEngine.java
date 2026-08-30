@@ -5,9 +5,9 @@ import id.kingbrezz.aegisac.player.PlayerDataManager;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 
 import java.util.Objects;
@@ -24,7 +24,10 @@ public final class DetectionEngine {
             PlayerDataManager playerDataManager
     ) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
-        this.checkManager = Objects.requireNonNull(checkManager, "checkManager");
+        this.checkManager = Objects.requireNonNull(
+                checkManager,
+                "checkManager"
+        );
         this.playerDataManager = Objects.requireNonNull(
                 playerDataManager,
                 "playerDataManager"
@@ -46,7 +49,9 @@ public final class DetectionEngine {
     }
 
     /**
-     * @return true when at least one check produced a violation.
+     * Processes a player movement.
+     *
+     * @return true when at least one check produced a violation
      */
     public boolean handleMove(
             Player player,
@@ -93,6 +98,10 @@ public final class DetectionEngine {
             return;
         }
 
+        if (!isFinite(from) || !isFinite(to)) {
+            return;
+        }
+
         if (!player.isOnline() || player.isDead()) {
             return;
         }
@@ -120,6 +129,10 @@ public final class DetectionEngine {
             return;
         }
 
+        if (!isFinite(to)) {
+            return;
+        }
+
         PlayerDataManager.PlayerData data =
                 playerDataManager.get(player);
 
@@ -142,7 +155,13 @@ public final class DetectionEngine {
         PlayerDataManager.PlayerData data =
                 playerDataManager.get(player);
 
-        data.resetMovement(player.getLocation());
+        Location location = player.getLocation();
+
+        if (!isFinite(location)) {
+            return;
+        }
+
+        data.resetMovement(location);
 
         checkManager.handleWorldChange(
                 player,
@@ -242,8 +261,12 @@ public final class DetectionEngine {
         checkManager.handleQuit(player);
     }
 
-    private boolean sameWorld(Location first, Location second) {
-        if (first.getWorld() == null || second.getWorld() == null) {
+    private boolean sameWorld(
+            Location first,
+            Location second
+    ) {
+        if (first.getWorld() == null
+                || second.getWorld() == null) {
             return false;
         }
 
