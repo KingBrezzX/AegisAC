@@ -1,92 +1,77 @@
-prefix: "&8[&bAegisAC&8] &r"
-
-general:
-  no-permission: "{prefix}&cYou don't have permission to do that."
-  player-only: "{prefix}&cThis command can only be used by a player."
-  unknown-command: "{prefix}&cUnknown subcommand. Use &f/aegisac help&c."
-  reload-success: "{prefix}&aConfiguration reloaded successfully."
-  reload-failed: "{prefix}&cFailed to reload configuration. Check the console."
-  plugin-info: "{prefix}&7Running &bAegisAC &7version &f{version}&7 by &fKingBrezz&7."
+prefix: "&8[&bAegisAC&8] "
 
 command:
-  help:
-    header: "&8&m--------------------&r &bAegisAC &8&m--------------------"
-    reload: "&b/aegisac reload &8- &7Reload configuration."
-    alerts: "&b/aegisac alerts &8- &7Toggle violation alerts."
-    checks: "&b/aegisac checks &8- &7Show enabled checks."
-    verbose: "&b/aegisac verbose &8- &7Toggle verbose detection."
-    info: "&b/aegisac info &8- &7Show plugin information."
-    footer: "&8&m------------------------------------------------"
+  help: |
+    &8&m----------------------------------------
+    &b&lAegisAC &7Commands
+    &8&m----------------------------------------
+    &b/aegisac help &8- &7Show this help
+    &b/aegisac info &8- &7Plugin information
+    &b/aegisac status &8- &7Show system status
+    &b/aegisac checks &8- &7List registered checks
+    &b/aegisac alerts &8- &7Check alert status
+    &b/aegisac reload &8- &7Reload configuration
+    &b/aegisac reset <player> &8- &7Reset player VL
+    &b/aegisac reset <player> <check> &8- &7Reset check VL
+    &b/aegisac version &8- &7Show plugin version
+    &8&m----------------------------------------
 
-  alerts:
-    enabled: "{prefix}&aAlerts enabled."
-    disabled: "{prefix}&cAlerts disabled."
+  unknown: "&cUnknown command. &7Use &f/aegisac help&7."
 
-  verbose:
-    enabled: "{prefix}&aVerbose mode enabled."
-    disabled: "{prefix}&cVerbose mode disabled."
+  reload: "&aConfiguration and messages reloaded successfully."
 
-  checks:
-    header: "&8&m------------&r &bAegisAC Checks &8&m------------"
-    enabled: "&a✔ &f{check} &8- &aEnabled"
-    disabled: "&c✘ &f{check} &8- &cDisabled"
-    footer: "&8&m---------------------------------------------"
+  no-checks: "&eNo checks are currently registered."
 
-alert:
-  format: "&8[&bAegisAC&8] &c⚠ &f{player} &7failed &b{check} &8(&fVL {vl}&8) &7Confidence: &f{confidence}%"
-  verbose: "&8[&bAegisAC&8] &7{player} &8→ &b{check} &8| &7VL: &f{vl} &8| &7Confidence: &f{confidence}% &8| &7Ping: &f{ping}ms"
+  alerts-enabled: "&aAegisAC alerts are enabled for you."
 
-  details:
-    header: "&8&m-------------&r &bDetection Details &8&m-------------"
-    player: "&7Player: &f{player}"
-    check: "&7Check: &b{check}"
-    violation-level: "&7Violation Level: &f{vl}"
-    confidence: "&7Confidence: &f{confidence}%"
-    ping: "&7Ping: &f{ping}ms"
-    tps: "&7Server TPS: &f{tps}"
-    action: "&7Action: &f{action}"
-    location: "&7Location: &f{location}"
-    footer: "&8&m------------------------------------------------"
+  reset-usage: "&cUsage: &f/aegisac reset <player> [check]"
 
-punishment:
-  warning: "{prefix}&cSuspicious activity detected."
-  setback: "{prefix}&eYour movement has been corrected."
-  kick: "{prefix}&cYou have been kicked for suspicious activity."
-  command-failed: "{prefix}&cUnable to execute punishment command."
+  reset-player: "&aReset all violations for &f{player}&a."
 
-discord:
-  detection:
-    title: "AegisAC Detection"
-    player: "Player"
-    check: "Check"
-    violation-level: "Violation Level"
-    confidence: "Confidence"
-    ping: "Ping"
-    tps: "Server TPS"
-    action: "Action"
-    location: "Location"
+  reset-check: "&aReset &f{check} &aviolations for &f{player}&a."
 
-  punishment:
-    title: "AegisAC Punishment"
-    player: "Player"
-    reason: "Reason"
-    violation-level: "Violation Level"
-    action: "Action"
+  version: "&7Running &bAegisAC &7version &f{version}&7."
 
 errors:
-  internal: "{prefix}&cAn internal error occurred. Please check the console."
-  invalid-player: "{prefix}&cThat player could not be found."
-  invalid-number: "{prefix}&cInvalid number."
-  configuration: "{prefix}&cAegisAC configuration contains an invalid value."
+  no-permission: "&cYou do not have permission to use this command."
 
-status:
-  enabled: "&aEnabled"
-  disabled: "&cDisabled"
-  unknown: "&7Unknown"
+  player-not-found: "&cPlayer &f{player} &cwas not found."
 
-actions:
-  none: "None"
-  alert: "Alert"
-  setback: "Setback"
-  kick: "Kick"
-  ban: "Ban"
+  player-not-tracked: "&cPlayer &f{player} &cis not currently tracked."
+
+alerts:
+  violation: "&8[&bAegisAC&8] &c{player} &7failed &e{check} &8| &7VL: &f{vl} &8| &7Confidence: &f{confidence}% &8| &7Ping: &f{ping}ms"
+
+  violation-setback: "&8[&bAegisAC&8] &c{player} &7failed &e{check} &8| &7VL: &f{vl} &8| &7Confidence: &f{confidence}% &8| &7Action: &eSetback"
+
+  punishment: "&8[&bAegisAC&8] &c{player} &7has reached the punishment threshold for &e{check}&7."
+
+  debug: "&8[&bAegisAC Debug&8] &7{player} &8» &f{check} &8| VL=&f{vl} &8| Confidence=&f{confidence}%"
+
+setback:
+  success: "&8[&bAegisAC&8] &7Invalid movement from &f{player} &7was corrected."
+
+punishment:
+  executed: "&8[&bAegisAC&8] &cPunishment executed for &f{player}&c."
+
+  failed: "&8[&bAegisAC&8] &cFailed to execute punishment for &f{player}&c."
+
+system:
+  enabled: "&aAegisAC protection enabled."
+
+  disabled: "&cAegisAC protection disabled."
+
+  loaded: "&aAegisAC loaded successfully."
+
+  unloaded: "&cAegisAC has been disabled."
+
+  checks-loaded: "&7Loaded &f{count} &7checks."
+
+  players-tracked: "&7Tracking &f{count} &7players."
+
+logs:
+  violation: "Violation detected: player={player}, check={check}, vl={vl}, confidence={confidence}%"
+
+  punishment: "Punishment executed: player={player}, check={check}, vl={vl}"
+
+  setback: "Setback executed: player={player}, check={check}"
