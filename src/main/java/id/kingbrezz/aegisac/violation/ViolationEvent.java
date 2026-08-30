@@ -1,75 +1,101 @@
 package id.kingbrezz.aegisac.violation;
 
-import id.kingbrezz.aegisac.check.CheckResult;
-import id.kingbrezz.aegisac.player.PlayerData;
 import org.bukkit.entity.Player;
 
 import java.util.Objects;
 
+/**
+ * Immutable event describing a detected violation.
+ */
 public final class ViolationEvent {
 
     private final Player player;
-    private final PlayerData data;
+    private final String playerName;
     private final String checkName;
+
     private final double violationLevel;
-    private final double violationAmount;
     private final double confidence;
-    private final boolean setback;
+
+    private final int ping;
+
     private final String action;
     private final String detail;
-    private final long timestamp;
 
     public ViolationEvent(
             Player player,
-            PlayerData data,
-            CheckResult result,
-            double violationLevel
+            String checkName,
+            double violationLevel,
+            double confidence,
+            int ping,
+            String action,
+            String detail
     ) {
         this.player = Objects.requireNonNull(
                 player,
                 "player"
         );
 
-        this.data = Objects.requireNonNull(
-                data,
-                "data"
+        this.playerName = player.getName();
+
+        this.checkName = normalize(
+                checkName,
+                "unknown"
         );
 
-        Objects.requireNonNull(
-                result,
-                "result"
+        this.violationLevel =
+                sanitize(violationLevel);
+
+        this.confidence =
+                clamp(
+                        sanitize(confidence),
+                        0.0D,
+                        1.0D
+                );
+
+        this.ping = Math.max(
+                0,
+                ping
         );
 
-        if (!result.isFailed()) {
-            throw new IllegalArgumentException(
-                    "ViolationEvent requires a failed CheckResult."
-            );
-        }
+        this.action = normalize(
+                action,
+                "none"
+        );
 
-        if (!Double.isFinite(violationLevel)
-                || violationLevel < 0.0) {
-            throw new IllegalArgumentException(
-                    "violationLevel must be finite and non-negative."
-            );
-        }
+        this.detail = normalize(
+                detail,
+                ""
+        );
+    }
 
-        this.checkName = result.getCheckName();
-        this.violationLevel = violationLevel;
-        this.violationAmount =
-                result.getViolationAmount();
-        this.confidence = result.getConfidence();
-        this.setback = result.shouldSetback();
-        this.action = result.getAction();
-        this.detail = result.getDetail();
-        this.timestamp = System.currentTimeMillis();
+    /**
+     * Convenience constructor for checks that do not
+     * need to provide ping/action information.
+     */
+    public ViolationEvent(
+            Player player,
+            String checkName,
+            double violationLevel,
+            double confidence,
+            String detail
+    ) {
+        this(
+                player,
+                checkName,
+                violationLevel,
+                confidence,
+                getPing(player),
+                "none",
+                detail
+        );
     }
 
     public Player getPlayer() {
         return player;
     }
 
-    public PlayerData getData() {
-        return data;
+    public String getPlayerName() {
+        return playerName;
     }
 
     public String getCheckName() {
@@ -80,16 +106,12 @@ public final class ViolationEvent {
         return violationLevel;
     }
 
-    public double getViolationAmount() {
-        return violationAmount;
-    }
-
     public double getConfidence() {
         return confidence;
     }
 
-    public boolean shouldSetback() {
-        return setback;
+    public int getPing() {
+        return ping;
     }
 
     public String getAction() {
@@ -100,40 +122,54 @@ public final class ViolationEvent {
         return detail;
     }
 
-    public long getTimestamp() {
-        return timestamp;
-    }
-
-    public String getPlayerName() {
-        return player.getName();
-    }
-
-    public int getPing() {
-        return data.getPing();
-    }
-
-    public boolean isHighConfidence(double threshold) {
-        if (!Double.isFinite(threshold)) {
-            return false;
+    private static int getPing(Player player) {
+        if (player == null) {
+            return 0;
         }
 
-        return confidence >= Math.max(
-                0.0,
-                Math.min(1.0, threshold)
+        /*
+         * Paper/Bukkit Player#getPing() is available on modern
+         * server APIs targeted by AegisAC.
+         */
+        try {
+            return Math.max(
+                    0,
+                    player.getPing()
+            );
+        } catch (Throwable ignored) {
+            return 0;
+        }
+    }
+
+    private static double sanitize(double value) {
+        return Double.isFinite(value)
+                ? value
+                : 0.0D;
+    }
+
+    private static double clamp(
+            double value,
+            double min,
+            double max
+    ) {
+        return Math.max(
+                min,
+                Math.min(
+                        max,
+                        value
+                )
         );
     }
 
-    @Override
-    public String toString() {
-        return "ViolationEvent{" +
-                "player=" + player.getName() +
-                ", checkName='" + checkName + '\'' +
-                ", violationLevel=" + violationLevel +
-                ", violationAmount=" + violationAmount +
-                ", confidence=" + confidence +
-                ", setback=" + setback +
-                ", action='" + action + '\'' +
-                ", timestamp=" + timestamp +
-                '}';
+    private static String normalize(
+            String value,
+            String fallback
+    ) {
+        if (value == null
+                || value.isBlank()) {
+            return fallback;
+        }
+
+        return value;
     }
-    }
+            }
