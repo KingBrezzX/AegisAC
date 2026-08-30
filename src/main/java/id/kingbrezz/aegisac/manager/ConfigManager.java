@@ -1,463 +1,330 @@
 package id.kingbrezz.aegisac.manager;
 
 import id.kingbrezz.aegisac.AegisAC;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 
 public final class ConfigManager {
 
     private final AegisAC plugin;
 
+    private FileConfiguration config;
+
+    private final Map<String, CheckSettings> checkSettings = new HashMap<>();
+
     public ConfigManager(AegisAC plugin) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
     }
 
     public void load() {
+        plugin.saveDefaultConfig();
         plugin.reloadConfig();
+
+        config = plugin.getConfig();
+
+        checkSettings.clear();
+        loadCheckSettings();
+
+        plugin.getLogger().info(
+                "Configuration loaded. Registered check configurations: "
+                        + checkSettings.size()
+        );
+    }
+
+    private void loadCheckSettings() {
+        ConfigurationSection checks = config.getConfigurationSection("checks");
+
+        if (checks == null) {
+            return;
+        }
+
+        for (String category : checks.getKeys(false)) {
+            ConfigurationSection categorySection =
+                    checks.getConfigurationSection(category);
+
+            if (categorySection == null) {
+                continue;
+            }
+
+            /*
+             * Supports both:
+             *
+             * checks:
+             *   speed:
+             *
+             * and:
+             *
+             * checks:
+             *   movement:
+             *     speed:
+             */
+            if (looksLikeCheck(categorySection)) {
+                loadCheck(category, categorySection);
+                continue;
+            }
+
+            for (String checkName : categorySection.getKeys(false)) {
+                ConfigurationSection section =
+                        categorySection.getConfigurationSection(checkName);
+
+                if (section == null) {
+                    continue;
+                }
+
+                if (looksLikeCheck(section)) {
+                    loadCheck(checkName, section);
+                }
+            }
+        }
+    }
+
+    private boolean looksLikeCheck(ConfigurationSection section) {
+        return section.contains("enabled")
+                || section.contains("violation")
+                || section.contains("vl")
+                || section.contains("buffer")
+                || section.contains("setback")
+                || section.contains("punishment");
+    }
+
+    private void loadCheck(
+            String name,
+            ConfigurationSection section
+    ) {
+        String key = normalize(name);
+
+        boolean enabled = section.getBoolean("enabled", true);
+
+        double violationAmount = readDouble(
+                section,
+                "violation.amount",
+                section.getDouble("vl", 1.0)
+        );
+
+        double buffer = readDouble(
+                section,
+                "buffer.amount",
+                section.getDouble("buffer", 1.0)
+        );
+
+        double bufferDecay = readDouble(
+                section,
+                "buffer.decay",
+                0.05
+        );
+
+        double maxBuffer = readDouble(
+                section,
+                "buffer.maximum",
+                5.0
+        );
+
+        boolean setback = section.getBoolean(
+                "setback",
+                section.getBoolean("setback.enabled", false)
+        );
+
+        boolean punish = section.getBoolean(
+                "punishment.enabled",
+                section.getBoolean("punish", true)
+        );
+
+        int maxVl = section.getInt(
+                "violation.maximum",
+                section.getInt("max-vl", 20)
+        );
+
+        int alertInterval = section.getInt(
+                "alert.interval",
+                0
+        );
+
+        CheckSettings settings = new CheckSettings(
+                enabled,
+                violationAmount,
+                buffer,
+                bufferDecay,
+                maxBuffer,
+                setback,
+                punish,
+                maxVl,
+                alertInterval
+        );
+
+        checkSettings.put(key, settings);
+    }
+
+    private double readDouble(
+            ConfigurationSection section,
+            String path,
+            double fallback
+    ) {
+        if (!section.contains(path)) {
+            return fallback;
+        }
+
+        return section.getDouble(path, fallback);
+    }
+
+    private String normalize(String value) {
+        return value
+                .toLowerCase()
+                .replace('-', '_')
+                .replace(' ', '_');
+    }
+
+    public boolean isCheckEnabled(String checkName) {
+        return getCheckSettings(checkName).enabled();
+    }
+
+    public double getViolationAmount(String checkName) {
+        return getCheckSettings(checkName).violationAmount();
+    }
+
+    public double getBufferAmount(String checkName) {
+        return getCheckSettings(checkName).bufferAmount();
+    }
+
+    public double getBufferDecay(String checkName) {
+        return getCheckSettings(checkName).bufferDecay();
+    }
+
+    public double getMaximumBuffer(String checkName) {
+        return getCheckSettings(checkName).maxBuffer();
+    }
+
+    public boolean shouldSetback(String checkName) {
+        return getCheckSettings(checkName).setback();
+    }
+
+    public boolean shouldPunish(String checkName) {
+        return getCheckSettings(checkName).punish();
+    }
+
+    public int getMaximumViolation(String checkName) {
+        return getCheckSettings(checkName).maxVl();
+    }
+
+    public int getAlertInterval(String checkName) {
+        return getCheckSettings(checkName).alertInterval();
+    }
+
+    public CheckSettings getCheckSettings(String checkName) {
+        String key = normalize(checkName);
+
+        CheckSettings settings = checkSettings.get(key);
+
+        if (settings != null) {
+            return settings;
+        }
+
+        /*
+         * Safe defaults.
+         *
+         * Unknown checks remain enabled so adding a new check does not
+         * silently disable it. Individual checks can still opt out via
+         * config.yml.
+         */
+        return CheckSettings.DEFAULT;
+    }
+
+    public Map<String, CheckSettings> getAllCheckSettings() {
+        return Collections.unmodifiableMap(checkSettings);
     }
 
     public FileConfiguration getConfig() {
-        return plugin.getConfig();
+        return config;
     }
 
-    public boolean isEnabled() {
-        return getConfig().getBoolean("settings.enabled", true);
+    public void reload() {
+        load();
     }
 
-    public boolean isDebug() {
-        return getConfig().getBoolean("settings.debug", false);
-    }
+    public static final class CheckSettings {
 
-    public boolean isVerbose() {
-        return getConfig().getBoolean("settings.verbose", false);
-    }
-
-    public String getBypassPermission() {
-        return getConfig().getString(
-                "settings.bypass-permission",
-                "aegisac.bypass"
-        );
-    }
-
-    public int getDefaultPunishmentVl() {
-        return Math.max(
-                1,
-                getConfig().getInt(
-                        "detection.default-punishment-vl",
-                        20
-                )
-        );
-    }
-
-    public int getMaxViolationLevel() {
-        return Math.max(
-                1,
-                getConfig().getInt(
-                        "detection.max-violation-level",
-                        100
-                )
-        );
-    }
-
-    public double getViolationDecay() {
-        return Math.max(
-                0.0,
-                getConfig().getDouble(
-                        "detection.violation-decay",
-                        1.0
-                )
-        );
-    }
-
-    public long getViolationDecayIntervalMillis() {
-        long seconds = Math.max(
-                1,
-                getConfig().getLong(
-                        "detection.violation-decay-interval",
-                        5
-                )
-        );
-
-        return seconds * 1000L;
-    }
-
-    public double getMinimumConfidence() {
-        return clamp(
-                getConfig().getDouble(
-                        "detection.minimum-confidence",
-                        0.70
-                ),
-                0.0,
-                1.0
-        );
-    }
-
-    public int getJoinGracePeriodSeconds() {
-        return Math.max(
-                0,
-                getConfig().getInt(
-                        "detection.join-grace-period",
-                        3
-                )
-        );
-    }
-
-    public boolean isPerformanceProtectionEnabled() {
-        return getConfig().getBoolean(
-                "detection.performance-protection.enabled",
-                true
-        );
-    }
-
-    public double getMinimumTps() {
-        return Math.max(
+        public static final CheckSettings DEFAULT = new CheckSettings(
+                true,
                 1.0,
-                getConfig().getDouble(
-                        "detection.performance-protection.minimum-tps",
-                        18.0
-                )
-        );
-    }
-
-    public boolean isPingProtectionEnabled() {
-        return getConfig().getBoolean(
-                "detection.ping-protection.enabled",
-                true
-        );
-    }
-
-    public int getMaximumPing() {
-        return Math.max(
-                0,
-                getConfig().getInt(
-                        "detection.ping-protection.maximum-ping",
-                        400
-                )
-        );
-    }
-
-    public boolean isSetbackEnabled() {
-        return getConfig().getBoolean(
-                "setback.enabled",
-                true
-        );
-    }
-
-    public int getMaximumSetbacksPerInterval() {
-        return Math.max(
-                1,
-                getConfig().getInt(
-                        "setback.max-per-interval",
-                        3
-                )
-        );
-    }
-
-    public long getSetbackIntervalMillis() {
-        long seconds = Math.max(
-                1,
-                getConfig().getLong(
-                        "setback.interval-seconds",
-                        10
-                )
-        );
-
-        return seconds * 1000L;
-    }
-
-    public boolean shouldRestoreSafePosition() {
-        return getConfig().getBoolean(
-                "setback.restore-safe-position",
-                true
-        );
-    }
-
-    public boolean isPunishmentEnabled() {
-        return getConfig().getBoolean(
-                "punishment.enabled",
-                true
-        );
-    }
-
-    public int getPunishmentThreshold() {
-        return Math.max(
-                1,
-                getConfig().getInt(
-                        "punishment.threshold",
-                        getDefaultPunishmentVl()
-                )
-        );
-    }
-
-    public boolean shouldProtectOperators() {
-        return getConfig().getBoolean(
-                "punishment.protect-operators",
-                true
-        );
-    }
-
-    public boolean isPunishmentConfidenceRequired() {
-        return getConfig().getBoolean(
-                "punishment.require-confidence",
-                true
-        );
-    }
-
-    public double getPunishmentMinimumConfidence() {
-        return clamp(
-                getConfig().getDouble(
-                        "punishment.minimum-confidence",
-                        0.95
-                ),
-                0.0,
-                1.0
-        );
-    }
-
-    public boolean areAlertsEnabled() {
-        return getConfig().getBoolean(
-                "alerts.enabled",
-                true
-        );
-    }
-
-    public boolean areStaffAlertsEnabled() {
-        return getConfig().getBoolean(
-                "alerts.staff",
-                true
-        );
-    }
-
-    public boolean isConsoleAlertsEnabled() {
-        return getConfig().getBoolean(
-                "alerts.console",
-                true
-        );
-    }
-
-    public boolean isAlertAntiSpamEnabled() {
-        return getConfig().getBoolean(
-                "alerts.anti-spam.enabled",
-                true
-        );
-    }
-
-    public long getAlertCooldownMillis() {
-        return Math.max(
-                0L,
-                getConfig().getLong(
-                        "alerts.anti-spam.cooldown-milliseconds",
-                        1500L
-                )
-        );
-    }
-
-    public boolean isDiscordEnabled() {
-        return getConfig().getBoolean(
-                "discord.enabled",
-                false
-        );
-    }
-
-    public String getDiscordWebhookUrl() {
-        return getConfig().getString(
-                "discord.webhook-url",
-                ""
-        ).trim();
-    }
-
-    public int getDiscordMinimumViolationLevel() {
-        return Math.max(
-                1,
-                getConfig().getInt(
-                        "discord.minimum-violation-level",
-                        10
-                )
-        );
-    }
-
-    public boolean isDiscordAntiSpamEnabled() {
-        return getConfig().getBoolean(
-                "discord.anti-spam.enabled",
-                true
-        );
-    }
-
-    public long getDiscordCooldownMillis() {
-        long seconds = Math.max(
-                0L,
-                getConfig().getLong(
-                        "discord.anti-spam.cooldown-seconds",
-                        10L
-                )
-        );
-
-        return seconds * 1000L;
-    }
-
-    public String getDiscordUsername() {
-        return getConfig().getString(
-                "discord.username",
-                "AegisAC"
-        );
-    }
-
-    public boolean isDiscordEmbedEnabled() {
-        return getConfig().getBoolean(
-                "discord.embed.enabled",
-                true
-        );
-    }
-
-    public boolean isHistoryEnabled() {
-        return getConfig().getBoolean(
-                "logging.history",
-                true
-        );
-    }
-
-    public int getMaximumHistoryPerPlayer() {
-        return Math.max(
-                1,
-                getConfig().getInt(
-                        "logging.max-history-per-player",
-                        50
-                )
-        );
-    }
-
-    public boolean isFileLoggingEnabled() {
-        return getConfig().getBoolean(
-                "logging.file",
-                true
-        );
-    }
-
-    public boolean isAsyncProcessingEnabled() {
-        return getConfig().getBoolean(
-                "performance.async-processing",
-                true
-        );
-    }
-
-    public int getMaximumChecksPerCycle() {
-        return Math.max(
-                1,
-                getConfig().getInt(
-                        "performance.max-checks-per-cycle",
-                        32
-                )
-        );
-    }
-
-    public boolean isSkipEmptyServerEnabled() {
-        return getConfig().getBoolean(
-                "performance.skip-empty-server",
-                true
-        );
-    }
-
-    public boolean isAdaptiveProcessingEnabled() {
-        return getConfig().getBoolean(
-                "performance.adaptive-processing.enabled",
-                true
-        );
-    }
-
-    public double getAdaptiveMinimumTps() {
-        return Math.max(
                 1.0,
-                getConfig().getDouble(
-                        "performance.adaptive-processing.minimum-tps",
-                        17.0
-                )
-        );
-    }
-
-    public boolean isCheckEnabled(String path) {
-        return getConfig().getBoolean(
-                "checks." + path + ".enabled",
-                false
-        );
-    }
-
-    public int getCheckViolation(String path, int fallback) {
-        return Math.max(
-                1,
-                getConfig().getInt(
-                        "checks." + path + ".vl",
-                        fallback
-                )
-        );
-    }
-
-    public double getCheckConfidence(String path, double fallback) {
-        return clamp(
-                getConfig().getDouble(
-                        "checks." + path + ".confidence",
-                        fallback
-                ),
-                0.0,
-                1.0
-        );
-    }
-
-    public boolean shouldCheckSetback(String path) {
-        return getConfig().getBoolean(
-                "checks." + path + ".setback",
-                false
-        );
-    }
-
-    public boolean isSpectatorIgnored() {
-        return getConfig().getBoolean(
-                "compatibility.ignore.spectator",
-                true
-        );
-    }
-
-    public boolean isVanishedIgnored() {
-        return getConfig().getBoolean(
-                "compatibility.ignore.vanished",
-                true
-        );
-    }
-
-    public boolean isPermissionFlightIgnored() {
-        return getConfig().getBoolean(
-                "compatibility.ignore.flying-with-permission",
-                true
-        );
-    }
-
-    public boolean isTemporaryExemptionEnabled() {
-        return getConfig().getBoolean(
-                "compatibility.temporary-exemption.enabled",
-                true
-        );
-    }
-
-    public long getTemporaryExemptionDurationMillis() {
-        long seconds = Math.max(
-                0L,
-                getConfig().getLong(
-                        "compatibility.temporary-exemption.duration-seconds",
-                        5L
-                )
+                0.05,
+                5.0,
+                false,
+                true,
+                20,
+                0
         );
 
-        return seconds * 1000L;
-    }
+        private final boolean enabled;
+        private final double violationAmount;
+        private final double bufferAmount;
+        private final double bufferDecay;
+        private final double maxBuffer;
+        private final boolean setback;
+        private final boolean punish;
+        private final int maxVl;
+        private final int alertInterval;
 
-    private double clamp(
-            double value,
-            double minimum,
-            double maximum
-    ) {
-        return Math.max(
-                minimum,
-                Math.min(maximum, value)
-        );
+        public CheckSettings(
+                boolean enabled,
+                double violationAmount,
+                double bufferAmount,
+                double bufferDecay,
+                double maxBuffer,
+                boolean setback,
+                boolean punish,
+                int maxVl,
+                int alertInterval
+        ) {
+            this.enabled = enabled;
+            this.violationAmount = violationAmount;
+            this.bufferAmount = bufferAmount;
+            this.bufferDecay = bufferDecay;
+            this.maxBuffer = maxBuffer;
+            this.setback = setback;
+            this.punish = punish;
+            this.maxVl = maxVl;
+            this.alertInterval = alertInterval;
+        }
+
+        public boolean enabled() {
+            return enabled;
+        }
+
+        public double violationAmount() {
+            return violationAmount;
+        }
+
+        public double bufferAmount() {
+            return bufferAmount;
+        }
+
+        public double bufferDecay() {
+            return bufferDecay;
+        }
+
+        public double maxBuffer() {
+            return maxBuffer;
+        }
+
+        public boolean setback() {
+            return setback;
+        }
+
+        public boolean punish() {
+            return punish;
+        }
+
+        public int maxVl() {
+            return maxVl;
+        }
+
+        public int alertInterval() {
+            return alertInterval;
+        }
     }
-          }
+            }
