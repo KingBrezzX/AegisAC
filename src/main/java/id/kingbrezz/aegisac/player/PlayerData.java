@@ -1,114 +1,354 @@
 package id.kingbrezz.aegisac.player;
 
 import org.bukkit.Location;
+import org.bukkit.entity.Player;
 
-import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Runtime detection data for a single player.
+ *
+ * This class intentionally contains only lightweight state.
+ * It does not perform punishments or Bukkit event handling.
+ */
 public final class PlayerData {
 
-    private final UUID uniqueId;
+    private final UUID uuid;
 
-    private volatile String name;
+    private Location lastLocation;
+    private Location lastValidLocation;
 
-    private volatile Location lastLocation;
-    private volatile Location lastSafeLocation;
+    private long lastMoveTime;
+    private long lastRotationTime;
+    private long lastAttackTime;
 
-    private volatile long joinTime;
-    private volatile long lastMovementTime;
-    private volatile long lastAttackTime;
-    private volatile long lastViolationTime;
+    private double horizontalDistance;
+    private double verticalDistance;
 
-    private volatile int ping;
+    private float lastYaw;
+    private float lastPitch;
 
-    private volatile boolean exempt;
-    private volatile boolean temporarilyExempt;
+    private int ticksSinceTeleport;
+    private int ticksSinceJoin;
 
-    private final Map<String, Double> violations =
-            new ConcurrentHashMap<>();
+    private boolean onGround;
+    private boolean lastOnGround;
 
-    private final Map<String, Long> lastCheckTimes =
-            new ConcurrentHashMap<>();
+    private boolean recentlyTeleported;
+    private boolean exempt;
 
-    private final Map<String, Integer> setbackCounts =
-            new ConcurrentHashMap<>();
+    public PlayerData(UUID uuid) {
+        if (uuid == null) {
+            throw new IllegalArgumentException(
+                    "uuid cannot be null"
+            );
+        }
 
-    public PlayerData(UUID uniqueId, String name) {
-        this.uniqueId = uniqueId;
-        this.name = name;
-        this.joinTime = System.currentTimeMillis();
+        this.uuid = uuid;
+        this.lastMoveTime = System.currentTimeMillis();
+        this.lastRotationTime = this.lastMoveTime;
+        this.lastAttackTime = 0L;
+
+        this.ticksSinceTeleport = 100;
+        this.ticksSinceJoin = 0;
     }
 
-    public UUID getUniqueId() {
-        return uniqueId;
+    public UUID getUuid() {
+        return uuid;
     }
 
-    public String getName() {
-        return name;
+    /*
+     * ------------------------------------------------------------
+     * MOVEMENT
+     * ------------------------------------------------------------
+     */
+
+    public void updateMovement(Player player) {
+        if (player == null) {
+            return;
+        }
+
+        Location location = player.getLocation();
+
+        if (!isFinite(location)) {
+            return;
+        }
+
+        if (lastLocation != null) {
+            lastOnGround = onGround;
+        }
+
+        onGround = player.isOnGround();
+
+        lastLocation = location.clone();
+
+        if (lastValidLocation == null) {
+            lastValidLocation = location.clone();
+        }
+
+        lastYaw = location.getYaw();
+        lastPitch = location.getPitch();
+
+        lastMoveTime = System.currentTimeMillis();
+
+        ticksSinceJoin++;
+        ticksSinceTeleport++;
     }
 
-    public void setName(String name) {
-        if (name != null && !name.isBlank()) {
-            this.name = name;
+    public void recordMovement(
+            Location from,
+            Location to
+    ) {
+        if (from == null || to == null) {
+            return;
+        }
+
+        if (!isFinite(from) || !isFinite(to)) {
+            return;
+        }
+
+        if (from.getWorld() == null
+                || to.getWorld() == null
+                || !from.getWorld().equals(to.getWorld())) {
+            return;
+        }
+
+        horizontalDistance = Math.sqrt(
+                Math.pow(
+                        to.getX() - from.getX(),
+                        2.0
+                )
+                +
+                Math.pow(
+                        to.getZ() - from.getZ(),
+                        2.0
+                )
+        );
+
+        verticalDistance =
+                to.getY() - from.getY();
+
+        lastLocation = to.clone();
+
+        lastYaw = to.getYaw();
+        lastPitch = to.getPitch();
+
+        lastMoveTime = System.currentTimeMillis();
+
+        ticksSinceTeleport++;
+
+        recentlyTeleported =
+                ticksSinceTeleport < 3;
+    }
+
+    public void recordRotation(
+            Location from,
+            Location to
+    ) {
+        if (from == null || to == null) {
+            return;
+        }
+
+        if (!isFinite(from) || !isFinite(to)) {
+            return;
+        }
+
+        lastYaw = to.getYaw();
+        lastPitch = to.getPitch();
+
+        lastRotationTime =
+                System.currentTimeMillis();
+    }
+
+    public void resetMovement(Location location) {
+        if (location == null || !isFinite(location)) {
+            return;
+        }
+
+        lastLocation = location.clone();
+        lastValidLocation = location.clone();
+
+        horizontalDistance = 0.0D;
+        verticalDistance = 0.0D;
+
+        lastYaw = location.getYaw();
+        lastPitch = location.getPitch();
+
+        lastMoveTime = System.currentTimeMillis();
+
+        ticksSinceTeleport = 0;
+        recentlyTeleported = true;
+    }
+
+    /**
+     * Clears temporary detection state while keeping the UUID.
+     */
+    public void resetDetectionState() {
+        horizontalDistance = 0.0D;
+        verticalDistance = 0.0D;
+
+        ticksSinceTeleport = 0;
+        ticksSinceJoin = 0;
+
+        recentlyTeleported = false;
+
+        lastAttackTime = 0L;
+        lastRotationTime = System.currentTimeMillis();
+        lastMoveTime = System.currentTimeMillis();
+
+        if (lastLocation != null) {
+            lastValidLocation = lastLocation.clone();
         }
     }
 
-    public Location getLastLocation() {
-        return cloneLocation(lastLocation);
-    }
+    /*
+     * ------------------------------------------------------------
+     * ATTACK
+     * ------------------------------------------------------------
+     */
 
-    public void setLastLocation(Location location) {
-        this.lastLocation = cloneLocation(location);
-    }
-
-    public Location getLastSafeLocation() {
-        return cloneLocation(lastSafeLocation);
-    }
-
-    public void setLastSafeLocation(Location location) {
-        this.lastSafeLocation = cloneLocation(location);
-    }
-
-    public long getJoinTime() {
-        return joinTime;
-    }
-
-    public void resetJoinTime() {
-        joinTime = System.currentTimeMillis();
-    }
-
-    public long getLastMovementTime() {
-        return lastMovementTime;
-    }
-
-    public void markMovement() {
-        lastMovementTime = System.currentTimeMillis();
+    public void recordAttack() {
+        lastAttackTime =
+                System.currentTimeMillis();
     }
 
     public long getLastAttackTime() {
         return lastAttackTime;
     }
 
-    public void markAttack() {
-        lastAttackTime = System.currentTimeMillis();
+    public long getMillisSinceAttack() {
+        if (lastAttackTime <= 0L) {
+            return Long.MAX_VALUE;
+        }
+
+        return Math.max(
+                0L,
+                System.currentTimeMillis()
+                        - lastAttackTime
+        );
     }
 
-    public long getLastViolationTime() {
-        return lastViolationTime;
+    /*
+     * ------------------------------------------------------------
+     * LOCATION
+     * ------------------------------------------------------------
+     */
+
+    public Location getLastLocation() {
+        return cloneOrNull(lastLocation);
     }
 
-    public void markViolation() {
-        lastViolationTime = System.currentTimeMillis();
+    public Location getLastValidLocation() {
+        return cloneOrNull(lastValidLocation);
     }
 
-    public int getPing() {
-        return ping;
+    public void setLastValidLocation(Location location) {
+        if (location == null || !isFinite(location)) {
+            return;
+        }
+
+        lastValidLocation = location.clone();
     }
 
-    public void setPing(int ping) {
-        this.ping = Math.max(0, ping);
+    /*
+     * ------------------------------------------------------------
+     * DISTANCE
+     * ------------------------------------------------------------
+     */
+
+    public double getHorizontalDistance() {
+        return horizontalDistance;
     }
+
+    public double getVerticalDistance() {
+        return verticalDistance;
+    }
+
+    public double getMovementDistance() {
+        return Math.sqrt(
+                horizontalDistance
+                        * horizontalDistance
+                        +
+                        verticalDistance
+                        * verticalDistance
+        );
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * ROTATION
+     * ------------------------------------------------------------
+     */
+
+    public float getLastYaw() {
+        return lastYaw;
+    }
+
+    public float getLastPitch() {
+        return lastPitch;
+    }
+
+    public long getLastRotationTime() {
+        return lastRotationTime;
+    }
+
+    public long getMillisSinceRotation() {
+        return Math.max(
+                0L,
+                System.currentTimeMillis()
+                        - lastRotationTime
+        );
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * GROUND
+     * ------------------------------------------------------------
+     */
+
+    public boolean isOnGround() {
+        return onGround;
+    }
+
+    public boolean wasOnGround() {
+        return lastOnGround;
+    }
+
+    public void setOnGround(boolean onGround) {
+        this.lastOnGround = this.onGround;
+        this.onGround = onGround;
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * TELEPORT / JOIN
+     * ------------------------------------------------------------
+     */
+
+    public int getTicksSinceTeleport() {
+        return ticksSinceTeleport;
+    }
+
+    public int getTicksSinceJoin() {
+        return ticksSinceJoin;
+    }
+
+    public boolean isRecentlyTeleported() {
+        return recentlyTeleported;
+    }
+
+    public void setRecentlyTeleported(
+            boolean recentlyTeleported
+    ) {
+        this.recentlyTeleported =
+                recentlyTeleported;
+    }
+
+    /*
+     * ------------------------------------------------------------
+     * EXEMPTION
+     * ------------------------------------------------------------
+     */
 
     public boolean isExempt() {
         return exempt;
@@ -118,188 +358,46 @@ public final class PlayerData {
         this.exempt = exempt;
     }
 
-    public boolean isTemporarilyExempt() {
-        return temporarilyExempt;
+    /*
+     * ------------------------------------------------------------
+     * TIME
+     * ------------------------------------------------------------
+     */
+
+    public long getLastMoveTime() {
+        return lastMoveTime;
     }
 
-    public void setTemporarilyExempt(boolean temporarilyExempt) {
-        this.temporarilyExempt = temporarilyExempt;
-    }
-
-    public boolean isWithinJoinGracePeriod(int seconds) {
-        if (seconds <= 0) {
-            return false;
-        }
-
-        long elapsed = System.currentTimeMillis() - joinTime;
-        return elapsed < seconds * 1000L;
-    }
-
-    public double getViolation(String check) {
-        if (check == null || check.isBlank()) {
-            return 0.0;
-        }
-
-        return violations.getOrDefault(check, 0.0);
-    }
-
-    public double addViolation(
-            String check,
-            double amount
-    ) {
-        if (check == null || check.isBlank()) {
-            return 0.0;
-        }
-
-        if (!Double.isFinite(amount) || amount <= 0.0) {
-            return getViolation(check);
-        }
-
-        double result = violations.merge(
-                check,
-                amount,
-                Double::sum
-        );
-
-        lastViolationTime = System.currentTimeMillis();
-
-        return result;
-    }
-
-    public double reduceViolation(
-            String check,
-            double amount
-    ) {
-        if (check == null || check.isBlank()) {
-            return 0.0;
-        }
-
-        if (!Double.isFinite(amount) || amount <= 0.0) {
-            return getViolation(check);
-        }
-
-        return violations.compute(
-                check,
-                (key, current) -> {
-                    if (current == null) {
-                        return 0.0;
-                    }
-
-                    return Math.max(
-                            0.0,
-                            current - amount
-                    );
-                }
-        );
-    }
-
-    public void setViolation(
-            String check,
-            double value
-    ) {
-        if (check == null || check.isBlank()) {
-            return;
-        }
-
-        if (!Double.isFinite(value)) {
-            return;
-        }
-
-        violations.put(
-                check,
-                Math.max(0.0, value)
-        );
-    }
-
-    public void resetViolation(String check) {
-        if (check == null || check.isBlank()) {
-            return;
-        }
-
-        violations.remove(check);
-    }
-
-    public void resetViolations() {
-        violations.clear();
-    }
-
-    public Map<String, Double> getViolations() {
-        return Map.copyOf(violations);
-    }
-
-    public long getLastCheckTime(String check) {
-        if (check == null || check.isBlank()) {
-            return 0L;
-        }
-
-        return lastCheckTimes.getOrDefault(
-                check,
-                0L
-        );
-    }
-
-    public void markCheck(String check) {
-        if (check == null || check.isBlank()) {
-            return;
-        }
-
-        lastCheckTimes.put(
-                check,
+    public long getMillisSinceMove() {
+        return Math.max(
+                0L,
                 System.currentTimeMillis()
+                        - lastMoveTime
         );
     }
 
-    public int getSetbackCount(String check) {
-        if (check == null || check.isBlank()) {
-            return 0;
-        }
+    /*
+     * ------------------------------------------------------------
+     * INTERNAL
+     * ------------------------------------------------------------
+     */
 
-        return setbackCounts.getOrDefault(
-                check,
-                0
-        );
-    }
-
-    public int incrementSetbackCount(String check) {
-        if (check == null || check.isBlank()) {
-            return 0;
-        }
-
-        return setbackCounts.merge(
-                check,
-                1,
-                Integer::sum
-        );
-    }
-
-    public void resetSetbackCounts() {
-        setbackCounts.clear();
-    }
-
-    public void resetSetbackCount(String check) {
-        if (check == null || check.isBlank()) {
-            return;
-        }
-
-        setbackCounts.remove(check);
-    }
-
-    public void clearRuntimeState() {
-        violations.clear();
-        lastCheckTimes.clear();
-        setbackCounts.clear();
-
-        lastLocation = null;
-        lastSafeLocation = null;
-
-        lastMovementTime = 0L;
-        lastAttackTime = 0L;
-        lastViolationTime = 0L;
-    }
-
-    private Location cloneLocation(Location location) {
+    private static Location cloneOrNull(
+            Location location
+    ) {
         return location == null
                 ? null
                 : location.clone();
     }
-          }
+
+    private static boolean isFinite(
+            Location location
+    ) {
+        return location.getWorld() != null
+                && Double.isFinite(location.getX())
+                && Double.isFinite(location.getY())
+                && Double.isFinite(location.getZ())
+                && Float.isFinite(location.getYaw())
+                && Float.isFinite(location.getPitch());
+    }
+            }
