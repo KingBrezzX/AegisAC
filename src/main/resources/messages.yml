@@ -1,0 +1,92 @@
+prefix: "&8[&bAegisAC&8] &r"
+
+general:
+  no-permission: "{prefix}&cYou don't have permission to do that."
+  player-only: "{prefix}&cThis command can only be used by a player."
+  unknown-command: "{prefix}&cUnknown subcommand. Use &f/aegisac help&c."
+  reload-success: "{prefix}&aConfiguration reloaded successfully."
+  reload-failed: "{prefix}&cFailed to reload configuration. Check the console."
+  plugin-info: "{prefix}&7Running &bAegisAC &7version &f{version}&7 by &fKingBrezz&7."
+
+command:
+  help:
+    header: "&8&m--------------------&r &bAegisAC &8&m--------------------"
+    reload: "&b/aegisac reload &8- &7Reload configuration."
+    alerts: "&b/aegisac alerts &8- &7Toggle violation alerts."
+    checks: "&b/aegisac checks &8- &7Show enabled checks."
+    verbose: "&b/aegisac verbose &8- &7Toggle verbose detection."
+    info: "&b/aegisac info &8- &7Show plugin information."
+    footer: "&8&m------------------------------------------------"
+
+  alerts:
+    enabled: "{prefix}&aAlerts enabled."
+    disabled: "{prefix}&cAlerts disabled."
+
+  verbose:
+    enabled: "{prefix}&aVerbose mode enabled."
+    disabled: "{prefix}&cVerbose mode disabled."
+
+  checks:
+    header: "&8&m------------&r &bAegisAC Checks &8&m------------"
+    enabled: "&a✔ &f{check} &8- &aEnabled"
+    disabled: "&c✘ &f{check} &8- &cDisabled"
+    footer: "&8&m---------------------------------------------"
+
+alert:
+  format: "&8[&bAegisAC&8] &c⚠ &f{player} &7failed &b{check} &8(&fVL {vl}&8) &7Confidence: &f{confidence}%"
+  verbose: "&8[&bAegisAC&8] &7{player} &8→ &b{check} &8| &7VL: &f{vl} &8| &7Confidence: &f{confidence}% &8| &7Ping: &f{ping}ms"
+
+  details:
+    header: "&8&m-------------&r &bDetection Details &8&m-------------"
+    player: "&7Player: &f{player}"
+    check: "&7Check: &b{check}"
+    violation-level: "&7Violation Level: &f{vl}"
+    confidence: "&7Confidence: &f{confidence}%"
+    ping: "&7Ping: &f{ping}ms"
+    tps: "&7Server TPS: &f{tps}"
+    action: "&7Action: &f{action}"
+    location: "&7Location: &f{location}"
+    footer: "&8&m------------------------------------------------"
+
+punishment:
+  warning: "{prefix}&cSuspicious activity detected."
+  setback: "{prefix}&eYour movement has been corrected."
+  kick: "{prefix}&cYou have been kicked for suspicious activity."
+  command-failed: "{prefix}&cUnable to execute punishment command."
+
+discord:
+  detection:
+    title: "AegisAC Detection"
+    player: "Player"
+    check: "Check"
+    violation-level: "Violation Level"
+    confidence: "Confidence"
+    ping: "Ping"
+    tps: "Server TPS"
+    action: "Action"
+    location: "Location"
+
+  punishment:
+    title: "AegisAC Punishment"
+    player: "Player"
+    reason: "Reason"
+    violation-level: "Violation Level"
+    action: "Action"
+
+errors:
+  internal: "{prefix}&cAn internal error occurred. Please check the console."
+  invalid-player: "{prefix}&cThat player could not be found."
+  invalid-number: "{prefix}&cInvalid number."
+  configuration: "{prefix}&cAegisAC configuration contains an invalid value."
+
+status:
+  enabled: "&aEnabled"
+  disabled: "&cDisabled"
+  unknown: "&7Unknown"
+
+actions:
+  none: "None"
+  alert: "Alert"
+  setback: "Setback"
+  kick: "Kick"
+  ban: "Ban"
