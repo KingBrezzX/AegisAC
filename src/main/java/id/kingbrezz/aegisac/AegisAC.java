@@ -26,78 +26,75 @@ public final class AegisAC extends JavaPlugin {
         instance = this;
 
         saveDefaultConfig();
+
+        if (!getDataFolder().exists() && !getDataFolder().mkdirs()) {
+            getLogger().warning("Could not create plugin data folder.");
+        }
+
         saveResource("messages.yml", false);
 
         getLogger().info(
-                "AegisAC v"
+                "Starting AegisAC v"
                         + getDescription().getVersion()
-                        + " is starting..."
+                        + "..."
         );
-
-        getLogger().info("Author: KingBrezz");
-        getLogger().info("Platform: Paper");
-        getLogger().info("Target: Minecraft Java Edition");
 
         /*
          * Core managers
          */
         configManager = new ConfigManager(this);
         messageManager = new MessageManager(this);
-        playerDataManager = new PlayerDataManager(this);
+        playerDataManager = new PlayerDataManager();
         checkManager = new CheckManager(this);
 
         /*
-         * Alert system
+         * Alert manager
          */
         alertManager = new AlertManager(
-                this
+                this,
+                messageManager
         );
 
         /*
-         * Commands
+         * Command registration
          */
         registerCommands();
 
-        getLogger().info(
-                "AegisAC has been enabled."
-        );
+        getLogger().info("AegisAC enabled successfully.");
     }
 
     @Override
     public void onDisable() {
-        getLogger().info(
-                "AegisAC has been disabled."
-        );
+        getLogger().info("Disabling AegisAC...");
 
         if (instance == this) {
             instance = null;
         }
+
+        getLogger().info("AegisAC disabled.");
     }
 
     private void registerCommands() {
-        PluginCommand command =
-                getCommand("aegisac");
+        PluginCommand command = getCommand("aegisac");
 
         if (command == null) {
             getLogger().log(
                     Level.SEVERE,
-                    "Unable to register /aegisac. "
-                            + "The command is missing "
-                            + "from plugin.yml."
+                    "Unable to register /aegisac because "
+                            + "the command is missing from plugin.yml."
             );
             return;
         }
 
-        AegisCommand executor =
-                new AegisCommand(
-                        this,
-                        messageManager,
-                        checkManager,
-                        playerDataManager
-                );
+        AegisCommand aegisCommand = new AegisCommand(
+                this,
+                messageManager,
+                checkManager,
+                playerDataManager
+        );
 
-        command.setExecutor(executor);
-        command.setTabCompleter(executor);
+        command.setExecutor(aegisCommand);
+        command.setTabCompleter(aegisCommand);
     }
 
     public ConfigManager getConfigManager() {
@@ -123,7 +120,7 @@ public final class AegisAC extends JavaPlugin {
     public static AegisAC getInstance() {
         if (instance == null) {
             throw new IllegalStateException(
-                    "AegisAC is not enabled."
+                    "AegisAC is not currently enabled."
             );
         }
 
