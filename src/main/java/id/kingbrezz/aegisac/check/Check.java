@@ -9,82 +9,67 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 
+/**
+ * Base contract for every AegisAC detection check.
+ *
+ * Checks should remain lightweight and must never perform
+ * expensive synchronous operations on the server thread.
+ */
 public interface Check {
 
     /**
-     * Unique technical name of this check.
+     * Technical name of the check.
      */
     String getName();
 
     /**
-     * Human-readable name displayed in alerts.
-     */
-    default String getDisplayName() {
-        return getName();
-    }
-
-    /**
-     * Check category.
-     */
-    default CheckType getType() {
-        return CheckType.OTHER;
-    }
-
-    /**
      * Whether this check is currently enabled.
      */
-    default boolean isEnabled() {
-        return true;
-    }
+    boolean isEnabled();
 
-    /*
-     * ------------------------------------------------------------
-     * Capability flags
-     * ------------------------------------------------------------
+    /**
+     * Enables or disables the check.
      */
+    void setEnabled(boolean enabled);
 
+    /**
+     * Whether this check receives movement callbacks.
+     */
     default boolean isMovementCheck() {
         return false;
     }
 
+    /**
+     * Whether this check receives rotation callbacks.
+     */
     default boolean isRotationCheck() {
         return false;
     }
 
+    /**
+     * Whether this check receives combat callbacks.
+     */
     default boolean isCombatCheck() {
         return false;
     }
 
+    /**
+     * Whether this check receives block callbacks.
+     */
     default boolean isBlockCheck() {
         return false;
     }
 
-    /*
-     * ------------------------------------------------------------
-     * Player lifecycle
-     * ------------------------------------------------------------
+    /**
+     * Called when a player joins.
      */
-
     default void onJoin(Player player) {
     }
 
-    default void onQuit(Player player) {
-    }
-
-    default void onDeath(
-            Player player,
-            PlayerDataManager.PlayerData data
-    ) {
-    }
-
-    /*
-     * ------------------------------------------------------------
-     * Movement
-     * ------------------------------------------------------------
-     */
-
     /**
-     * @return true if this movement produced a violation.
+     * Called for movement checks.
+     *
+     * @return true when a violation was produced
      */
     default boolean onMove(
             DetectionEngine.MovementContext context
@@ -92,6 +77,9 @@ public interface Check {
         return false;
     }
 
+    /**
+     * Called for rotation checks.
+     */
     default void onRotation(
             Player player,
             Location from,
@@ -100,6 +88,9 @@ public interface Check {
     ) {
     }
 
+    /**
+     * Called after a teleport.
+     */
     default void onTeleport(
             Player player,
             Location from,
@@ -109,18 +100,18 @@ public interface Check {
     ) {
     }
 
+    /**
+     * Called after a world change.
+     */
     default void onWorldChange(
             Player player,
             PlayerDataManager.PlayerData data
     ) {
     }
 
-    /*
-     * ------------------------------------------------------------
-     * Combat
-     * ------------------------------------------------------------
+    /**
+     * Called for entity attacks.
      */
-
     default void onAttack(
             Player player,
             Entity target,
@@ -129,12 +120,9 @@ public interface Check {
     ) {
     }
 
-    /*
-     * ------------------------------------------------------------
-     * Block interaction
-     * ------------------------------------------------------------
+    /**
+     * Called when a block is placed.
      */
-
     default void onBlockPlace(
             Player player,
             BlockPlaceEvent event,
@@ -142,6 +130,9 @@ public interface Check {
     ) {
     }
 
+    /**
+     * Called when a block is broken.
+     */
     default void onBlockBreak(
             Player player,
             BlockBreakEvent event,
@@ -149,19 +140,20 @@ public interface Check {
     ) {
     }
 
-    /*
-     * ------------------------------------------------------------
-     * Check type
-     * ------------------------------------------------------------
+    /**
+     * Called when a player dies.
      */
+    default void onDeath(
+            Player player,
+            PlayerDataManager.PlayerData data
+    ) {
+    }
 
-    enum CheckType {
-        MOVEMENT,
-        COMBAT,
-        PLAYER,
-        WORLD,
-        PACKET,
-        BLOCK,
-        OTHER
+    /**
+     * Called when a player quits.
+     *
+     * Checks should use this to clear temporary per-player state.
+     */
+    default void onQuit(Player player) {
     }
         }
